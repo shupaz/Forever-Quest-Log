@@ -1,5 +1,9 @@
 # shupaz ForeverQuestLog
 
+<p align="center">
+  <img src="assets/logo.jpg" alt="shupaz ForeverQuestLog Logo" width="220" />
+</p>
+
 **shupaz ForeverQuestLog** is a World of Warcraft addon that restores the beloved standalone Classic dual-pane Quest Log window while decoupling it from the full-screen World Map. It also enhances the Objective Tracker with collapsible zone grouping and smooth scrolling.
 
 ---
