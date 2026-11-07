@@ -7,8 +7,8 @@
 ## AddonCompartmentFunc: shupaz_ForeverQuestLog_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: shupaz_ForeverQuestLog_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: shupaz_ForeverQuestLog_OnAddonCompartmentLeave
-## SavedVariables: shupazForeverQuestLogDB, ForeverQuestLogDB
-## SavedVariablesPerCharacter: shupazForeverQuestLogCharDB, ForeverQuestLogCharDB
+## SavedVariables: shupazForeverQuestLogDB
+## SavedVariablesPerCharacter: shupazForeverQuestLogCharDB
 
 Bindings.xml
 shupaz_ForeverQuestLog.lua

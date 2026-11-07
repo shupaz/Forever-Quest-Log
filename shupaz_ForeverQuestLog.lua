@@ -2,14 +2,14 @@ local ADDON_NAME, FQL = ...
 if type(FQL) ~= "table" then
     FQL = {}
 end
-_G.ForeverQuestLog = FQL
+_G.shupaz_ForeverQuestLog = FQL
 
-FQL.ADDON_NAME = ADDON_NAME or "ForeverQuestLog"
+FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
 FQL.VERSION = "1.0.0"
 
 -- Keybinding label in Options > Keybindings > AddOns
-BINDING_HEADER_FOREVERQUESTLOG = "Forever Quest Log"
-BINDING_NAME_FOREVERQUESTLOG_TOGGLE = "Toggle Forever Quest Log"
+BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG = "shupaz ForeverQuestLog"
+BINDING_NAME_SHUPAZ_FOREVERQUESTLOG_TOGGLE = "Toggle Quest Log"
 
 local MIN_SCALE, MAX_SCALE = 0.6, 1.6
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
@@ -72,7 +72,7 @@ function FQL:GetTrackerFonts()
 end
 
 function FQL:GetTrackerFontEntry(fontID)
-    fontID = fontID or (ForeverQuestLogDB and ForeverQuestLogDB.trackerFont) or "DEFAULT"
+    fontID = fontID or (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT"
     local fonts = self:GetTrackerFonts()
     for i, entry in ipairs(fonts) do
         if entry.id == fontID then
@@ -351,11 +351,11 @@ local function SetQuestWatchedByID(questID, logIndex, shouldWatch)
         if not added and AddQuestWatch and logIndex then
             pcall(AddQuestWatch, logIndex)
         end
-    elseif (not shouldWatch) and watched then
+    elseif not shouldWatch then
         if C_QuestLog and C_QuestLog.RemoveQuestWatch then
             pcall(C_QuestLog.RemoveQuestWatch, questID)
         end
-        if IsQuestWatchedByID(questID, logIndex) and RemoveQuestWatch and logIndex then
+        if RemoveQuestWatch and logIndex then
             pcall(RemoveQuestWatch, logIndex)
         end
     end
@@ -664,7 +664,7 @@ end
 -- ============================================================
 
 local function SetQuestLogCVarClosed()
-    if not ForeverQuestLogDB or ForeverQuestLogDB.hideMapQuestLog == false then return end
+    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.hideMapQuestLog == false then return end
     if C_CVar and C_CVar.GetCVar and C_CVar.SetCVar then
         if C_CVar.GetCVar("questLogOpen") ~= "0" then
             pcall(C_CVar.SetCVar, "questLogOpen", "0")
@@ -688,7 +688,7 @@ local function GetMapSidePanelToggle()
 end
 
 local function SuppressMapQuestLog()
-    if ForeverQuestLogDB and ForeverQuestLogDB.hideMapQuestLog == false then
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.hideMapQuestLog == false then
         local toggle = GetMapSidePanelToggle()
         if toggle then
             toggle:SetAlpha(1)
@@ -720,7 +720,7 @@ local function SuppressMapQuestLog()
         if not toggle._fqlHooked then
             toggle._fqlHooked = true
             toggle:HookScript("OnShow", function(self)
-                if not ForeverQuestLogDB or ForeverQuestLogDB.hideMapQuestLog == false then return end
+                if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.hideMapQuestLog == false then return end
                 self:SetAlpha(0)
                 if CanChangeFrame(self) then
                     self:Hide()
@@ -741,7 +741,7 @@ local function SuppressMapQuestLog()
         if not _G.QuestMapFrame._fqlHooked then
             _G.QuestMapFrame._fqlHooked = true
             _G.QuestMapFrame:HookScript("OnShow", function(self)
-                if not ForeverQuestLogDB or ForeverQuestLogDB.hideMapQuestLog == false then return end
+                if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.hideMapQuestLog == false then return end
                 SetQuestLogCVarClosed()
                 self:SetAlpha(0)
             end)
@@ -756,7 +756,7 @@ local function UpdateKeybindOverrides()
     end
     FQL._needsBindingUpdate = false
     if not FQL.bindingOwner then
-        FQL.bindingOwner = CreateFrame("Frame", "ForeverQuestLogBindingFrame", UIParent)
+        FQL.bindingOwner = CreateFrame("Frame", "shupaz_ForeverQuestLogBindingFrame", UIParent)
     end
     if ClearOverrideBindings then
         ClearOverrideBindings(FQL.bindingOwner)
@@ -972,7 +972,7 @@ end
 function FQL:ShowCopyPopup(titleText, urlText)
     local box = self.copyPopup
     if not box then
-        box = CreateFrame("Frame", "ForeverQuestLogCopyPopup", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        box = CreateFrame("Frame", "shupaz_ForeverQuestLogCopyPopup", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
         self.copyPopup = box
         box:SetSize(420, 110)
         box:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
@@ -985,7 +985,7 @@ function FQL:ShowCopyPopup(titleText, urlText)
         box:SetScript("OnDragStop", box.StopMovingOrSizing)
         SetBackdrop(box, "Interface\\Buttons\\WHITE8X8", "Interface\\DialogFrame\\UI-DialogBox-Border", 24, 6)
         box:SetBackdropColor(0.06, 0.055, 0.048, 0.98)
-        tinsert(UISpecialFrames, "ForeverQuestLogCopyPopup")
+        tinsert(UISpecialFrames, "shupaz_ForeverQuestLogCopyPopup")
 
         box.title = box:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         box.title:SetPoint("TOP", 0, -14)
@@ -1028,7 +1028,7 @@ function FQL:ShowQuestContextMenu(anchorButton, questEntry)
     if not questEntry or not questEntry.questID then return end
     local menu = self.contextMenu
     if not menu then
-        menu = CreateFrame("Frame", "ForeverQuestLogContextMenu", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        menu = CreateFrame("Frame", "shupaz_ForeverQuestLogContextMenu", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
         self.contextMenu = menu
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         menu:SetToplevel(true)
@@ -1234,7 +1234,7 @@ function FQL:SetScale(scale)
     if scale < MIN_SCALE then scale = MIN_SCALE end
     if scale > MAX_SCALE then scale = MAX_SCALE end
     scale = math.floor(scale * 100 + 0.5) / 100
-    ForeverQuestLogDB.scale = scale
+    shupazForeverQuestLogDB.scale = scale
     self.frame:SetScale(scale)
     if self.optionsPanel and self.optionsPanel.RefreshControls then
         self.optionsPanel:RefreshControls()
@@ -1245,8 +1245,8 @@ function FQL:SavePosition()
     if not self.frame then return end
     local point, _, relPoint, x, y = self.frame:GetPoint(1)
     if point and not IsSecret(x) and not IsSecret(y) then
-        ForeverQuestLogDB.useDefaultPosition = false
-        ForeverQuestLogDB.pos = {
+        shupazForeverQuestLogDB.useDefaultPosition = false
+        shupazForeverQuestLogDB.pos = {
             point = point,
             relPoint = relPoint or point,
             x = x,
@@ -1277,7 +1277,7 @@ local DEFAULT_LEFT_PANELS = {
 
 function FQL:UpdateDefaultPanelPosition()
     if not self.frame then return end
-    if ForeverQuestLogDB and ForeverQuestLogDB.useDefaultPosition == false then
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.useDefaultPosition == false then
         return
     end
 
@@ -1339,8 +1339,8 @@ end
 function FQL:RestorePosition()
     if not self.frame then return end
     self.frame:ClearAllPoints()
-    local useDefault = not ForeverQuestLogDB or (ForeverQuestLogDB.useDefaultPosition ~= false)
-    local pos = ForeverQuestLogDB and ForeverQuestLogDB.pos
+    local useDefault = not shupazForeverQuestLogDB or (shupazForeverQuestLogDB.useDefaultPosition ~= false)
+    local pos = shupazForeverQuestLogDB and shupazForeverQuestLogDB.pos
     if not useDefault and type(pos) == "table" and pos.point and type(pos.x) == "number" and type(pos.y) == "number" then
         self.frame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x, pos.y)
     else
@@ -1354,12 +1354,12 @@ function FQL:CreateMainFrame()
     -- Use ButtonFrameTemplate / PortraitFrameTemplate so ForeverQuestLogFrame shares
     -- the exact Blizzard frame appearance of Professions / Character Info / Spellbook
     -- (top-left round portrait badge, gold title bar, stone background, bronze NineSlice border).
-    local okTemplate, frame = pcall(CreateFrame, "Frame", "ForeverQuestLogFrame", UIParent, "ButtonFrameTemplate")
+    local okTemplate, frame = pcall(CreateFrame, "Frame", "shupaz_ForeverQuestLogFrame", UIParent, "ButtonFrameTemplate")
     if not okTemplate or not frame then
-        okTemplate, frame = pcall(CreateFrame, "Frame", "ForeverQuestLogFrame", UIParent, "PortraitFrameTemplate")
+        okTemplate, frame = pcall(CreateFrame, "Frame", "shupaz_ForeverQuestLogFrame", UIParent, "PortraitFrameTemplate")
     end
     if not okTemplate or not frame then
-        frame = CreateFrame("Frame", "ForeverQuestLogFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        frame = CreateFrame("Frame", "shupaz_ForeverQuestLogFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
     end
 
     self.frame = frame
@@ -1372,7 +1372,7 @@ function FQL:CreateMainFrame()
     frame:RegisterForDrag("LeftButton")
     frame:Hide()
 
-    tinsert(UISpecialFrames, "ForeverQuestLogFrame")
+    tinsert(UISpecialFrames, "shupaz_ForeverQuestLogFrame")
 
     -- Hide default single Inset from ButtonFrameTemplate (we render dual Left & Right insets)
     if frame.Inset then
@@ -1443,7 +1443,7 @@ function FQL:CreateMainFrame()
     end
 
     frame:SetScript("OnDragStart", function(self)
-        if ForeverQuestLogDB and ForeverQuestLogDB.lockWindow then return end
+        if shupazForeverQuestLogDB and shupazForeverQuestLogDB.lockWindow then return end
         self:StartMoving()
     end)
     frame:SetScript("OnDragStop", function(self)
@@ -1454,7 +1454,7 @@ function FQL:CreateMainFrame()
     frame:SetScript("OnShow", function()
         PlayOpenSound()
         FQL:SetupDefaultPanelHooks()
-        if not ForeverQuestLogDB or ForeverQuestLogDB.useDefaultPosition ~= false then
+        if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.useDefaultPosition ~= false then
             FQL:UpdateDefaultPanelPosition()
         end
         FQL:Refresh()
@@ -1618,7 +1618,7 @@ function FQL:CreateMainFrame()
     AddClassicParchment(leftPane, 0.11, 1.00, 0.94, 0.82)
 
     -- Left ScrollFrame
-    local listScroll = CreateFrame("ScrollFrame", "ForeverQuestLogListScroll", leftPane, "UIPanelScrollFrameTemplate")
+    local listScroll = CreateFrame("ScrollFrame", "shupaz_ForeverQuestLogListScroll", leftPane, "UIPanelScrollFrameTemplate")
     frame.listScroll = listScroll
     listScroll:SetPoint("TOPLEFT", 6, -6)
     listScroll:SetPoint("BOTTOMRIGHT", -26, 6)
@@ -1662,7 +1662,7 @@ function FQL:CreateMainFrame()
     parchmentTex:SetTexCoord(0, 0.585, 0, 0.65)
     parchmentTex:SetVertexColor(1.00, 0.96, 0.85, 1.00)
 
-    local detailScroll = CreateFrame("ScrollFrame", "ForeverQuestLogDetailScroll", parchmentInset, "UIPanelScrollFrameTemplate")
+    local detailScroll = CreateFrame("ScrollFrame", "shupaz_ForeverQuestLogDetailScroll", parchmentInset, "UIPanelScrollFrameTemplate")
     frame.detailScroll = detailScroll
     detailScroll:SetPoint("TOPLEFT", 12, -10)
     detailScroll:SetPoint("BOTTOMRIGHT", -28, 10)
@@ -1692,7 +1692,7 @@ function FQL:CreateMainFrame()
     dSep:SetColorTexture(0.45, 0.32, 0.16, 0.55)
 
     -- Special Quest Item button (top-right of objectives when present)
-    local specialItemBtn = CreateFrame("Button", "ForeverQuestLogSpecialItemBtn", detailContent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    local specialItemBtn = CreateFrame("Button", "shupaz_ForeverQuestLogSpecialItemBtn", detailContent, BackdropTemplateMixin and "BackdropTemplate" or nil)
     frame.specialItemBtn = specialItemBtn
     specialItemBtn:SetSize(36, 36)
     SetBackdrop(specialItemBtn, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 10, 2)
@@ -1863,7 +1863,7 @@ function FQL:CreateMainFrame()
             FQL:ToggleTrackAllQuests()
         end,
         "Track / Untrack All Quests",
-        "Track all quests in your Quest Log, or untrack all quests if every quest is already tracked."
+        "Track all quests in your Quest Log, or untrack all quests if any quests are currently tracked."
     )
 
     frame.mapBtn = CreateBottomButton(
@@ -1941,15 +1941,15 @@ function FQL:CreateMainFrame()
 
     self:SetupDefaultPanelHooks()
     self:RestorePosition()
-    if ForeverQuestLogDB and ForeverQuestLogDB.scale then
-        self:SetScale(ForeverQuestLogDB.scale)
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.scale then
+        self:SetScale(shupazForeverQuestLogDB.scale)
     end
 
     -- Optional BlizzMove registration if user uses BlizzMove
     if _G.BlizzMoveAPI and _G.BlizzMoveAPI.RegisterFrames then
         pcall(function()
             _G.BlizzMoveAPI:RegisterFrames({
-                ["ForeverQuestLogFrame"] = {
+                ["shupaz_ForeverQuestLogFrame"] = {
                     Versions = { [_G.BlizzMoveAPI.Versions.Fallback] = true },
                 },
             })
@@ -2000,8 +2000,8 @@ local function AcquireListRow(frame, index)
         if self.isHeader then
             PlayClickSound()
             local hKey = self.headerTitle
-            if hKey and ForeverQuestLogCharDB and ForeverQuestLogCharDB.collapsedHeaders then
-                ForeverQuestLogCharDB.collapsedHeaders[hKey] = not ForeverQuestLogCharDB.collapsedHeaders[hKey] or nil
+            if hKey and shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedHeaders then
+                shupazForeverQuestLogCharDB.collapsedHeaders[hKey] = not shupazForeverQuestLogCharDB.collapsedHeaders[hKey] or nil
                 FQL:RefreshQuestList()
             end
             return
@@ -2046,7 +2046,7 @@ local function AcquireListRow(frame, index)
 
     row:SetScript("OnEnter", function(self)
         if self.isHeader or not self.questEntry or not GameTooltip then return end
-        if ForeverQuestLogDB and ForeverQuestLogDB.showTooltips == false then return end
+        if shupazForeverQuestLogDB and shupazForeverQuestLogDB.showTooltips == false then return end
         local q = self.questEntry
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local r, g, b = GetDifficultyColor(q.level)
@@ -2128,8 +2128,8 @@ end
 
 function FQL:ToggleAllHeaders()
     local sections = self:BuildStructuredLog()
-    ForeverQuestLogCharDB.collapsedHeaders = ForeverQuestLogCharDB.collapsedHeaders or {}
-    local collapsed = ForeverQuestLogCharDB.collapsedHeaders
+    shupazForeverQuestLogCharDB.collapsedHeaders = shupazForeverQuestLogCharDB.collapsedHeaders or {}
+    local collapsed = shupazForeverQuestLogCharDB.collapsedHeaders
 
     local anyExpanded = false
     for _, sec in ipairs(sections) do
@@ -2160,18 +2160,28 @@ function FQL:AreAllQuestsTracked()
             tracked = tracked + 1
         end
     end
-    return (total > 0 and tracked == total), total, tracked
+    local hasAnyTracked = (tracked > 0)
+    local allTracked = (total > 0 and tracked >= total)
+    return hasAnyTracked, total, tracked, allTracked
 end
 
 function FQL:ToggleTrackAllQuests()
-    local sections = self:BuildStructuredLog()
-    local allTracked, total = self:AreAllQuestsTracked()
+    local _, allQuestsByID = self:BuildStructuredLog()
+    local hasAnyTracked, total = self:AreAllQuestsTracked()
     if total == 0 then return end
 
-    local shouldWatch = not allTracked
-    for _, sec in ipairs(sections) do
-        for _, q in ipairs(sec.quests) do
-            SetQuestWatchedByID(q.questID, q.logIndex, shouldWatch)
+    -- If any quests are currently tracked, untrack them all. Otherwise, track all.
+    local shouldWatch = not hasAnyTracked
+    for qid, q in pairs(allQuestsByID) do
+        SetQuestWatchedByID(qid, q.logIndex, shouldWatch)
+    end
+    if not shouldWatch and GetNumQuestWatches and RemoveQuestWatch then
+        local numWatches = SafeNum(GetNumQuestWatches()) or 0
+        for i = numWatches, 1, -1 do
+            local qIndex = (GetQuestIndexForWatch and GetQuestIndexForWatch(i)) or i
+            if qIndex then
+                pcall(RemoveQuestWatch, qIndex)
+            end
         end
     end
     if C_QuestLog and C_QuestLog.SortQuestWatches then
@@ -2191,8 +2201,8 @@ function FQL:SelectQuest(questID, logIndex)
     questID = SafeNum(questID)
     if not questID or questID <= 0 then return end
     self.selectedQuestID = questID
-    if ForeverQuestLogCharDB then
-        ForeverQuestLogCharDB.selectedQuestID = questID
+    if shupazForeverQuestLogCharDB then
+        shupazForeverQuestLogCharDB.selectedQuestID = questID
     end
     SelectLogQuest(questID, logIndex)
     self:Refresh()
@@ -2214,7 +2224,7 @@ function FQL:RefreshQuestList()
 
     -- Ensure valid selectedQuestID
     if not self.selectedQuestID or not allQuestsByID[self.selectedQuestID] then
-        local savedID = ForeverQuestLogCharDB and ForeverQuestLogCharDB.selectedQuestID
+        local savedID = shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.selectedQuestID
         if savedID and allQuestsByID[savedID] then
             self.selectedQuestID = savedID
         else
@@ -2224,7 +2234,7 @@ function FQL:RefreshQuestList()
 
     local filter = self.searchFilter or ""
     local isFiltering = filter ~= ""
-    local collapsed = (ForeverQuestLogCharDB and ForeverQuestLogCharDB.collapsedHeaders) or {}
+    local collapsed = (shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedHeaders) or {}
 
     local rowIndex = 0
     local yOffset = 0
@@ -2323,7 +2333,7 @@ function FQL:RefreshQuestList()
                     end
 
                     local prefix = ""
-                    if not ForeverQuestLogDB or ForeverQuestLogDB.showQuestLevels ~= false then
+                    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showQuestLevels ~= false then
                         local lvlStr = (q.level and q.level > 0) and tostring(q.level) or "?"
                         prefix = "[" .. lvlStr .. (q.tagAbbr or "") .. "] "
                     end
@@ -2354,13 +2364,13 @@ function FQL:RefreshQuestList()
     frame.listContent:SetHeight(math.max(1, yOffset))
 
     if frame.trackAllBtn then
-        local allTracked, totalQuests = self:AreAllQuestsTracked()
+        local hasAnyTracked, totalQuests = self:AreAllQuestsTracked()
         if totalQuests == 0 then
             frame.trackAllBtn:Disable()
             frame.trackAllBtn:SetText("Track All")
         else
             frame.trackAllBtn:Enable()
-            frame.trackAllBtn:SetText(allTracked and "Untrack All" or "Track All")
+            frame.trackAllBtn:SetText(hasAnyTracked and "Untrack All" or "Track All")
         end
     end
 end
@@ -2717,20 +2727,20 @@ function FQL:ResolveQuestZoneName(questID, questToZone)
 end
 
 function FQL:IsTrackerZoneCollapsed(zoneName)
-    if not zoneName or not ForeverQuestLogCharDB or not ForeverQuestLogCharDB.collapsedTrackerZones then
+    if not zoneName or not shupazForeverQuestLogCharDB or not shupazForeverQuestLogCharDB.collapsedTrackerZones then
         return false
     end
-    return ForeverQuestLogCharDB.collapsedTrackerZones[zoneName] == true
+    return shupazForeverQuestLogCharDB.collapsedTrackerZones[zoneName] == true
 end
 
 function FQL:SetTrackerZoneCollapsed(zoneName, collapsed)
     if not zoneName then return end
-    ForeverQuestLogCharDB = ForeverQuestLogCharDB or {}
-    ForeverQuestLogCharDB.collapsedTrackerZones = ForeverQuestLogCharDB.collapsedTrackerZones or {}
+    shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
+    shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
     if collapsed then
-        ForeverQuestLogCharDB.collapsedTrackerZones[zoneName] = true
+        shupazForeverQuestLogCharDB.collapsedTrackerZones[zoneName] = true
     else
-        ForeverQuestLogCharDB.collapsedTrackerZones[zoneName] = nil
+        shupazForeverQuestLogCharDB.collapsedTrackerZones[zoneName] = nil
     end
     self:RefreshObjectiveTracker()
 end
@@ -2742,9 +2752,9 @@ function FQL:ToggleTrackerZone(zoneName)
 end
 
 function FQL:ToggleAllTrackerZones(activeZones)
-    ForeverQuestLogCharDB = ForeverQuestLogCharDB or {}
-    ForeverQuestLogCharDB.collapsedTrackerZones = ForeverQuestLogCharDB.collapsedTrackerZones or {}
-    local collapsed = ForeverQuestLogCharDB.collapsedTrackerZones
+    shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
+    shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
+    local collapsed = shupazForeverQuestLogCharDB.collapsedTrackerZones
 
     local zones = {}
     local seen = {}
@@ -2818,7 +2828,7 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
     if not zoneName then return end
     local menu = self.trackerContextMenu
     if not menu then
-        menu = CreateFrame("Frame", "ForeverQuestLogTrackerZoneMenu", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        menu = CreateFrame("Frame", "shupaz_ForeverQuestLogTrackerZoneMenu", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
         self.trackerContextMenu = menu
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         menu:SetToplevel(true)
@@ -2856,8 +2866,8 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
         {
             label = "Open in Quest Log",
             fn = function()
-                if ForeverQuestLogCharDB and ForeverQuestLogCharDB.collapsedHeaders then
-                    ForeverQuestLogCharDB.collapsedHeaders[zoneName] = nil
+                if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedHeaders then
+                    shupazForeverQuestLogCharDB.collapsedHeaders[zoneName] = nil
                 end
                 local questToZone = FQL:GetQuestZoneLookup()
                 local firstQID = nil
@@ -2985,7 +2995,7 @@ local function AcquireTrackerZoneHeader(tracker, index)
         self.bg:SetColorTexture(0.22, 0.16, 0.06, 0.72)
         self.line:SetColorTexture(0.95, 0.78, 0.30, 0.80)
         self.titleText:SetTextColor(1.0, 0.94, 0.68)
-        if GameTooltip and (not ForeverQuestLogDB or ForeverQuestLogDB.showTooltips ~= false) then
+        if GameTooltip and (not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showTooltips ~= false) then
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             GameTooltip:SetText(self.zoneName or "Zone", 1, 0.82, 0)
             local status = self.isCollapsed and "Collapsed" or "Expanded"
@@ -3059,6 +3069,10 @@ local function IsRealTrackerBlock(block)
 end
 
 local function CaptureBlockNativeAnchors(block, contents)
+    local h = SafeNum(block.height) or SafeNum(block:GetHeight())
+    if h and h > 8 then
+        block._fqlHeight = h
+    end
     if block._fqlNativeCaptured then return end
     local numPts = block.GetNumPoints and block:GetNumPoints() or 0
     if numPts == 0 then return end
@@ -3329,7 +3343,7 @@ local function ApplyFontToTrackerBlock(block, fontPath)
 end
 
 function FQL:ApplyTrackerStyle(tracker)
-    local tScale = (ForeverQuestLogDB and tonumber(ForeverQuestLogDB.trackerScale)) or 1.0
+    local tScale = (shupazForeverQuestLogDB and tonumber(shupazForeverQuestLogDB.trackerScale)) or 1.0
     if tScale < MIN_SCALE then tScale = MIN_SCALE end
     if tScale > MAX_SCALE then tScale = MAX_SCALE end
 
@@ -3381,8 +3395,8 @@ function FQL:SetTrackerScale(scale)
     if scale < MIN_SCALE then scale = MIN_SCALE end
     if scale > MAX_SCALE then scale = MAX_SCALE end
     scale = math.floor(scale * 100 + 0.5) / 100
-    if ForeverQuestLogDB then
-        ForeverQuestLogDB.trackerScale = scale
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.trackerScale = scale
     end
     self:RefreshObjectiveTracker()
     if self.optionsPanel and self.optionsPanel.RefreshControls then
@@ -3391,8 +3405,8 @@ function FQL:SetTrackerScale(scale)
 end
 
 function FQL:SetTrackerFont(fontID)
-    if ForeverQuestLogDB then
-        ForeverQuestLogDB.trackerFont = fontID or "DEFAULT"
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.trackerFont = fontID or "DEFAULT"
     end
     self:RefreshObjectiveTracker()
     if self.optionsPanel and self.optionsPanel.RefreshControls then
@@ -3606,7 +3620,7 @@ local function EnsureTrackerScrollBar(tracker, contents)
 
     thumb:SetScript("OnEnter", function(self)
         self.tex:SetColorTexture(1.0, 0.85, 0.36, 0.98)
-        if GameTooltip and (not ForeverQuestLogDB or ForeverQuestLogDB.showTooltips ~= false) then
+        if GameTooltip and (not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showTooltips ~= false) then
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             GameTooltip:SetText("Objective Tracker Scroll", 1, 0.82, 0)
             local cur = tracker._fqlScrollIndex or 1
@@ -3763,7 +3777,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         end
     end
 
-    if ForeverQuestLogDB and ForeverQuestLogDB.trackerByZone == false then
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
         HideAllTrackerZoneHeaders(tracker)
         if tracker._fqlHeaderZoneBtn then tracker._fqlHeaderZoneBtn:Hide() end
         if tracker._fqlScrollBar then tracker._fqlScrollBar:Hide() end
@@ -3836,8 +3850,8 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     local groupsByName = {}
     local orderedGroups = {}
     local currentPlayerZone = (GetRealZoneText and SafeStr(GetRealZoneText())) or (GetZoneText and SafeStr(GetZoneText())) or nil
-    local prioritizeCurrent = (not ForeverQuestLogDB) or (ForeverQuestLogDB.trackerCurrentZoneFirst ~= false)
-    local showZoneCount = (not ForeverQuestLogDB) or (ForeverQuestLogDB.trackerShowZoneCount ~= false)
+    local prioritizeCurrent = (not shupazForeverQuestLogDB) or (shupazForeverQuestLogDB.trackerCurrentZoneFirst ~= false)
+    local showZoneCount = (not shupazForeverQuestLogDB) or (shupazForeverQuestLogDB.trackerShowZoneCount ~= false)
 
     for idx, entry in ipairs(questBlocks) do
         local qid = entry.questID
@@ -4151,14 +4165,14 @@ local function ForceUnlimitedTrackerHeight(self)
     if cur and cur > 40 and cur < 50000 then
         self._fqlNativeAvailableHeight = cur
     end
-    if not ForeverQuestLogDB or ForeverQuestLogDB.trackerByZone ~= false then
+    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.trackerByZone ~= false then
         self.availableHeight = 100000
     end
 end
 
 local function NeedsFullHeightRetry(tracker)
     if not tracker then return false end
-    if ForeverQuestLogDB and ForeverQuestLogDB.trackerByZone == false then return false end
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then return false end
     if tracker.hasSkippedBlocks then return true end
     local avail = SafeNum(tracker.availableHeight)
     if avail and avail < 50000 then return true end
@@ -4224,9 +4238,13 @@ local function HookSingleTrackerModule(tracker)
         hooksecurefunc(tracker, "LayoutContents", function(self)
             FQL:ApplyTrackerZoneLayout(self)
         end)
-    elseif tracker.Update then
-        hooksecurefunc(tracker, "Update", function(self)
-            FQL:ApplyTrackerZoneLayout(self)
+    end
+
+    if tracker.Update then
+        hooksecurefunc(tracker, "Update", function(self, availableHeight, dirtyUpdate)
+            if dirtyUpdate and not self._fqlRetryingFullHeight and not (InCombatLockdown and InCombatLockdown()) then
+                FQL:ApplyTrackerZoneLayout(self)
+            end
         end)
     end
 end
@@ -4264,7 +4282,7 @@ end
 function FQL:RefreshObjectiveTracker(forceFullRebuild)
     SetupObjectiveTrackerHooks()
     local inCombat = (InCombatLockdown and InCombatLockdown())
-    if ForeverQuestLogDB and ForeverQuestLogDB.trackerByZone == false then
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
         -- Hide custom zone headers first, then ask native tracker to re-layout blocks
         if _G.QuestObjectiveTracker then
             self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
@@ -4287,24 +4305,20 @@ function FQL:RefreshObjectiveTracker(forceFullRebuild)
     if not inCombat then
         if _G.QuestObjectiveTracker then
             _G.QuestObjectiveTracker.availableHeight = 100000
-            if forceFullRebuild or _G.QuestObjectiveTracker.hasSkippedBlocks then
-                if _G.QuestObjectiveTracker.MarkDirty then
-                    pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
-                end
-                if _G.QuestObjectiveTracker.Update then
-                    pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
-                end
+            if _G.QuestObjectiveTracker.MarkDirty then
+                pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
+            end
+            if _G.QuestObjectiveTracker.Update then
+                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
             end
         end
         if _G.CampaignQuestObjectiveTracker then
             _G.CampaignQuestObjectiveTracker.availableHeight = 100000
-            if forceFullRebuild or _G.CampaignQuestObjectiveTracker.hasSkippedBlocks then
-                if _G.CampaignQuestObjectiveTracker.MarkDirty then
-                    pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
-                end
-                if _G.CampaignQuestObjectiveTracker.Update then
-                    pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
-                end
+            if _G.CampaignQuestObjectiveTracker.MarkDirty then
+                pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
+            end
+            if _G.CampaignQuestObjectiveTracker.Update then
+                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
             end
         end
     else
@@ -4335,7 +4349,7 @@ function FQL:CreateOptionsPanel()
         return self.optionsPanel
     end
 
-    local panel = CreateFrame("Frame", "ForeverQuestLogOptionsPanel")
+    local panel = CreateFrame("Frame", "shupaz_ForeverQuestLogOptionsPanel")
     panel.name = "shupaz ForeverQuestLog"
     self.optionsPanel = panel
 
@@ -4428,8 +4442,8 @@ function FQL:CreateOptionsPanel()
             if PlaySound and SOUNDKIT then
                 PlaySound(checked and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
             end
-            if ForeverQuestLogDB then
-                ForeverQuestLogDB[dbKey] = checked
+            if shupazForeverQuestLogDB then
+                shupazForeverQuestLogDB[dbKey] = checked
             end
             if onChanged then
                 onChanged(checked)
@@ -4480,7 +4494,7 @@ function FQL:CreateOptionsPanel()
     scaleMinusBtn:SetPoint("LEFT", scaleSlider, "RIGHT", 10, 0)
     scaleMinusBtn:SetText("-")
     scaleMinusBtn:SetScript("OnClick", function()
-        local cur = (ForeverQuestLogDB and ForeverQuestLogDB.scale) or 1.0
+        local cur = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.scale) or 1.0
         FQL:SetScale(cur - 0.05)
     end)
 
@@ -4489,7 +4503,7 @@ function FQL:CreateOptionsPanel()
     scalePlusBtn:SetPoint("LEFT", scaleMinusBtn, "RIGHT", 4, 0)
     scalePlusBtn:SetText("+")
     scalePlusBtn:SetScript("OnClick", function()
-        local cur = (ForeverQuestLogDB and ForeverQuestLogDB.scale) or 1.0
+        local cur = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.scale) or 1.0
         FQL:SetScale(cur + 0.05)
     end)
 
@@ -4506,9 +4520,9 @@ function FQL:CreateOptionsPanel()
     resetPosBtn:SetPoint("LEFT", scaleResetBtn, "RIGHT", 8, 0)
     resetPosBtn:SetText("Default Position")
     resetPosBtn:SetScript("OnClick", function()
-        if ForeverQuestLogDB then
-            ForeverQuestLogDB.pos = nil
-            ForeverQuestLogDB.useDefaultPosition = true
+        if shupazForeverQuestLogDB then
+            shupazForeverQuestLogDB.pos = nil
+            shupazForeverQuestLogDB.useDefaultPosition = true
         end
         FQL:CreateMainFrame()
         FQL:RestorePosition()
@@ -4604,7 +4618,7 @@ function FQL:CreateOptionsPanel()
     tScaleMinusBtn:SetPoint("LEFT", tScaleSlider, "RIGHT", 10, 0)
     tScaleMinusBtn:SetText("-")
     tScaleMinusBtn:SetScript("OnClick", function()
-        local cur = (ForeverQuestLogDB and ForeverQuestLogDB.trackerScale) or 1.0
+        local cur = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerScale) or 1.0
         FQL:SetTrackerScale(cur - 0.05)
     end)
 
@@ -4613,7 +4627,7 @@ function FQL:CreateOptionsPanel()
     tScalePlusBtn:SetPoint("LEFT", tScaleMinusBtn, "RIGHT", 4, 0)
     tScalePlusBtn:SetText("+")
     tScalePlusBtn:SetScript("OnClick", function()
-        local cur = (ForeverQuestLogDB and ForeverQuestLogDB.trackerScale) or 1.0
+        local cur = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerScale) or 1.0
         FQL:SetTrackerScale(cur + 0.05)
     end)
 
@@ -4676,7 +4690,7 @@ function FQL:CreateOptionsPanel()
             return
         end
         local fonts = FQL:GetTrackerFonts()
-        local currentID = (ForeverQuestLogDB and ForeverQuestLogDB.trackerFont) or "DEFAULT"
+        local currentID = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT"
         local rowH = 22
         local maxRows = math.min(#fonts, 14)
 
@@ -4799,8 +4813,8 @@ function FQL:CreateOptionsPanel()
     expandTrackerBtn:SetPoint("TOPLEFT", bg, "TOPLEFT", 24, -502)
     expandTrackerBtn:SetText("Expand Tracker Zones")
     expandTrackerBtn:SetScript("OnClick", function()
-        if ForeverQuestLogCharDB and ForeverQuestLogCharDB.collapsedTrackerZones then
-            wipe(ForeverQuestLogCharDB.collapsedTrackerZones)
+        if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedTrackerZones then
+            wipe(shupazForeverQuestLogCharDB.collapsedTrackerZones)
         end
         FQL:RefreshObjectiveTracker()
     end)
@@ -4810,19 +4824,19 @@ function FQL:CreateOptionsPanel()
     collapseTrackerBtn:SetPoint("LEFT", expandTrackerBtn, "RIGHT", 10, 0)
     collapseTrackerBtn:SetText("Collapse Tracker Zones")
     collapseTrackerBtn:SetScript("OnClick", function()
-        if not ForeverQuestLogCharDB then return end
-        ForeverQuestLogCharDB.collapsedTrackerZones = ForeverQuestLogCharDB.collapsedTrackerZones or {}
+        if not shupazForeverQuestLogCharDB then return end
+        shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
         if _G.QuestObjectiveTracker and _G.QuestObjectiveTracker._fqlZoneHeaders then
             for _, hdr in ipairs(_G.QuestObjectiveTracker._fqlZoneHeaders) do
                 if hdr:IsShown() and hdr.zoneName then
-                    ForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
+                    shupazForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
                 end
             end
         end
         if _G.CampaignQuestObjectiveTracker and _G.CampaignQuestObjectiveTracker._fqlZoneHeaders then
             for _, hdr in ipairs(_G.CampaignQuestObjectiveTracker._fqlZoneHeaders) do
                 if hdr:IsShown() and hdr.zoneName then
-                    ForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
+                    shupazForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
                 end
             end
         end
@@ -4843,31 +4857,31 @@ function FQL:CreateOptionsPanel()
     footerText:SetText("Slash Commands:  |cffffd200/fql|r (toggle window)   |cffffd200/fql options|r (open settings)   |cffffd200/fql tracker|r (toggle tracker zones)   |cffffd200/fql reset|r (reset window)")
 
     function panel:RefreshControls()
-        if not ForeverQuestLogDB then return end
-        local scale = ForeverQuestLogDB.scale or 1.0
+        if not shupazForeverQuestLogDB then return end
+        local scale = shupazForeverQuestLogDB.scale or 1.0
         updatingSlider = true
         scaleSlider:SetValue(scale)
         scaleValueText:SetText(string.format("%d%%", math.floor(scale * 100 + 0.5)))
         updatingSlider = false
 
-        local tScale = ForeverQuestLogDB.trackerScale or 1.0
+        local tScale = shupazForeverQuestLogDB.trackerScale or 1.0
         updatingTrackerSlider = true
         tScaleSlider:SetValue(tScale)
         tScaleValueText:SetText(string.format("%d%%", math.floor(tScale * 100 + 0.5)))
         updatingTrackerSlider = false
 
-        local fontEntry = FQL:GetTrackerFontEntry(ForeverQuestLogDB.trackerFont)
+        local fontEntry = FQL:GetTrackerFontEntry(shupazForeverQuestLogDB.trackerFont)
         if fontEntry then
             fontDropdownText:SetText(fontEntry.label)
             pcall(fontDropdownText.SetFont, fontDropdownText, fontEntry.path, 12, "")
         end
 
         for _, cb in ipairs(checkboxes) do
-            local val = ForeverQuestLogDB[cb.dbKey]
+            local val = shupazForeverQuestLogDB[cb.dbKey]
             cb:SetChecked(val ~= false and val ~= nil)
         end
 
-        local trackerEnabled = (ForeverQuestLogDB.trackerByZone ~= false)
+        local trackerEnabled = (shupazForeverQuestLogDB.trackerByZone ~= false)
         cbTrackerCurrentZone:SetEnabled(trackerEnabled)
         cbTrackerCurrentZone:SetAlpha(trackerEnabled and 1.0 or 0.45)
         cbTrackerZoneCount:SetEnabled(trackerEnabled)
@@ -4877,14 +4891,14 @@ function FQL:CreateOptionsPanel()
     end
 
     resetDefaultsBtn:SetScript("OnClick", function()
-        if not ForeverQuestLogDB then return end
+        if not shupazForeverQuestLogDB then return end
         fontMenu:Hide()
         for k, v in pairs(DB_DEFAULTS) do
-            ForeverQuestLogDB[k] = v
+            shupazForeverQuestLogDB[k] = v
         end
-        ForeverQuestLogDB.pos = nil
-        if ForeverQuestLogCharDB and ForeverQuestLogCharDB.collapsedTrackerZones then
-            wipe(ForeverQuestLogCharDB.collapsedTrackerZones)
+        shupazForeverQuestLogDB.pos = nil
+        if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedTrackerZones then
+            wipe(shupazForeverQuestLogCharDB.collapsedTrackerZones)
         end
         FQL:SetScale(DB_DEFAULTS.scale or 1.0)
         FQL:SetTrackerScale(DB_DEFAULTS.trackerScale or 1.0)
@@ -4895,7 +4909,7 @@ function FQL:CreateOptionsPanel()
         FQL:Refresh()
         FQL:RefreshObjectiveTracker()
         panel:RefreshControls()
-        print("|cffffd200Forever Quest Log:|r All settings restored to defaults.")
+        print("|cffffd200shupaz ForeverQuestLog:|r All settings restored to defaults.")
     end)
 
     panel.OnCommit = function() end
@@ -4975,8 +4989,8 @@ function FQL:OpenToQuest(questID)
     self:CreateMainFrame()
     if questID and questID > 0 then
         self.selectedQuestID = questID
-        if ForeverQuestLogCharDB then
-            ForeverQuestLogCharDB.selectedQuestID = questID
+        if shupazForeverQuestLogCharDB then
+            shupazForeverQuestLogCharDB.selectedQuestID = questID
         end
     end
     self:Open()
@@ -5025,12 +5039,12 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         return
     end
     if msg == "reset" then
-        ForeverQuestLogDB.pos = nil
-        ForeverQuestLogDB.useDefaultPosition = true
+        shupazForeverQuestLogDB.pos = nil
+        shupazForeverQuestLogDB.useDefaultPosition = true
         FQL:SetScale(1.0)
         FQL:RestorePosition()
         FQL:Open()
-        print("|cffffd200Forever Quest Log:|r Window position and scale reset to default.")
+        print("|cffffd200shupaz ForeverQuestLog:|r Window position and scale reset to default.")
         return
     end
     if msg == "fixmenu" then
@@ -5039,19 +5053,19 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         return
     end
     if msg == "tracker" then
-        ForeverQuestLogDB.trackerByZone = not (ForeverQuestLogDB.trackerByZone ~= false)
+        shupazForeverQuestLogDB.trackerByZone = not (shupazForeverQuestLogDB.trackerByZone ~= false)
         FQL:RefreshObjectiveTracker()
         if FQL.optionsPanel and FQL.optionsPanel:IsShown() and FQL.optionsPanel.RefreshControls then
             FQL.optionsPanel:RefreshControls()
         end
-        print("|cffffd200Forever Quest Log:|r Objective Tracker zone headers " .. (ForeverQuestLogDB.trackerByZone and "enabled." or "disabled."))
+        print("|cffffd200shupaz ForeverQuestLog:|r Objective Tracker zone headers " .. (shupazForeverQuestLogDB.trackerByZone and "enabled." or "disabled."))
         return
     end
     local scaleArg = msg:match("^scale%s+([%d%.]+)$")
     if scaleArg then
         FQL:CreateMainFrame()
         FQL:SetScale(tonumber(scaleArg) or 1.0)
-        print(string.format("|cffffd200Forever Quest Log:|r Scale set to %.2f.", ForeverQuestLogDB.scale or 1.0))
+        print(string.format("|cffffd200shupaz ForeverQuestLog:|r Scale set to %.2f.", shupazForeverQuestLogDB.scale or 1.0))
         return
     end
     FQL:Toggle()
@@ -5079,6 +5093,9 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("QUEST_WATCH_UPDATE")
+eventFrame:RegisterEvent("QUEST_LOG_CRITERIA_UPDATE")
+eventFrame:RegisterEvent("QUEST_POI_UPDATE")
 
 local refreshQueued = false
 local trackerRefreshQueued = false
@@ -5131,34 +5148,21 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     if event == "PLAYER_LOGIN" then
-        if shupazForeverQuestLogDB then
-            ForeverQuestLogDB = shupazForeverQuestLogDB
-        elseif ForeverQuestLogDB then
-            shupazForeverQuestLogDB = ForeverQuestLogDB
-        else
-            ForeverQuestLogDB = {}
-            shupazForeverQuestLogDB = ForeverQuestLogDB
-        end
+        shupazForeverQuestLogDB = shupazForeverQuestLogDB or {}
         for k, v in pairs(DB_DEFAULTS) do
-            if ForeverQuestLogDB[k] == nil then
-                ForeverQuestLogDB[k] = v
-            end
-        end
-        if shupazForeverQuestLogCharDB then
-            ForeverQuestLogCharDB = shupazForeverQuestLogCharDB
-        elseif ForeverQuestLogCharDB then
-            shupazForeverQuestLogCharDB = ForeverQuestLogCharDB
-        else
-            ForeverQuestLogCharDB = {}
-            shupazForeverQuestLogCharDB = ForeverQuestLogCharDB
-        end
-        for k, v in pairs(CHAR_DEFAULTS) do
-            if ForeverQuestLogCharDB[k] == nil then
-                ForeverQuestLogCharDB[k] = type(v) == "table" and {} or v
+            if shupazForeverQuestLogDB[k] == nil then
+                shupazForeverQuestLogDB[k] = v
             end
         end
 
-        FQL.selectedQuestID = ForeverQuestLogCharDB.selectedQuestID
+        shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
+        for k, v in pairs(CHAR_DEFAULTS) do
+            if shupazForeverQuestLogCharDB[k] == nil then
+                shupazForeverQuestLogCharDB[k] = type(v) == "table" and {} or v
+            end
+        end
+
+        FQL.selectedQuestID = shupazForeverQuestLogCharDB.selectedQuestID
         SetupMapAndBindingHooks()
         SetupObjectiveTrackerHooks()
         FQL:CreateMainFrame()
@@ -5196,6 +5200,16 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    local isWatchOrQuestChange = (event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN")
+    local isWatchOrQuestChange = (
+        event == "QUEST_WATCH_UPDATE" or
+        event == "QUEST_LOG_UPDATE" or
+        event == "QUEST_LOG_CRITERIA_UPDATE" or
+        event == "QUEST_POI_UPDATE" or
+        event == "UNIT_QUEST_LOG_CHANGED" or
+        event == "QUEST_WATCH_LIST_CHANGED" or
+        event == "QUEST_ACCEPTED" or
+        event == "QUEST_REMOVED" or
+        event == "QUEST_TURNED_IN"
+    )
     ScheduleRefresh(isWatchOrQuestChange)
 end)

@@ -25,10 +25,20 @@
   - **Smart Scrolling**: A sleek, non-intrusive scrollbar appears automatically when tracked quests exceed screen height. Scroll smoothly with your mouse wheel or drag the thumb.
 
 - **Seamless Modern UI Integration**:
-  - Full support for Key Down action triggers (`ActionButtonUseKeyDown`).
-  - Integrated with the **Micro Menu** (Quest Log icon toggles the window directly).
   - Integrated with the **Addon Compartment** on the Minimap.
   - Default keyboard toggle bound to **L** (configurable in WoW Keybindings).
+
+---
+
+## 📸 Screenshots
+
+| Standalone Quest Log | Objective Tracker Grouping |
+| :---: | :---: |
+| <img src="assets/screenshot_05.png" alt="Standalone Quest Log Window" width="450"/> | <img src="assets/screenshot_02.png" alt="Objective Tracker Zone Headers" width="300"/> |
+
+| Tracker Scrollbar | Settings Panel |
+| :---: | :---: |
+| <img src="assets/screenshot_03.png" alt="Objective Tracker Scrollbar" width="300"/> | <img src="assets/screenshot_01.png" alt="Addon Settings Panel" width="450"/> |
 
 ---
 
@@ -41,7 +51,6 @@
 | `/fql tracker` | Toggle Objective Tracker zone grouping on or off. |
 | `/fql reset` | Reset the Quest Log window position and scale to defaults. |
 | `/fql scale <number>` | Set window scale directly (e.g. `/fql scale 1.1`). |
-| `/fql fixmenu` | Re-register micro menu keydown bindings. |
 
 ---
 
@@ -69,9 +78,8 @@ Access the settings panel via:
 1. Download the latest release `.zip` from [Releases](https://github.com/shupaz/Forever-Quest-Log/releases) or CurseForge.
 2. Extract the `shupaz_ForeverQuestLog` folder into your World of Warcraft directory:
    ```text
-   World of Warcraft\_retail_\Interface\AddOns\
+   World of Warcraft\_forever_\Interface\AddOns\
    ```
-   *(or `_classic_` / `_classic_era_` / your client folder)*
 3. Ensure the folder hierarchy is:
    ```text
    Interface\AddOns\shupaz_ForeverQuestLog\
