@@ -83,6 +83,12 @@ Access the settings panel via:
 
 ---
 
+## 🤝 Acknowledgements
+
+Developed by **shupaz**, built, refined, and polished in pair programming with **Antigravity** (Google DeepMind).
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
