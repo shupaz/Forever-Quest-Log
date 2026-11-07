@@ -4336,7 +4336,7 @@ function FQL:CreateOptionsPanel()
     end
 
     local panel = CreateFrame("Frame", "ForeverQuestLogOptionsPanel")
-    panel.name = "Forever Quest Log"
+    panel.name = "shupaz ForeverQuestLog"
     self.optionsPanel = panel
 
     -- Subtle dark card background inside Settings canvas
@@ -4355,7 +4355,7 @@ function FQL:CreateOptionsPanel()
 
     local title = bg:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 12, -2)
-    title:SetText("|cffffd200Forever Quest Log|r")
+    title:SetText("|cffffd200shupaz ForeverQuestLog|r")
 
     local subtitle = bg:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)

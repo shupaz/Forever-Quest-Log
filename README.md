@@ -1,6 +1,6 @@
-# Forever Quest Log
+# shupaz ForeverQuestLog
 
-**Forever Quest Log** is a World of Warcraft addon that restores the beloved standalone Classic dual-pane Quest Log window while decoupling it from the full-screen World Map. It also enhances the Objective Tracker with collapsible zone grouping and smooth scrolling.
+**shupaz ForeverQuestLog** is a World of Warcraft addon that restores the beloved standalone Classic dual-pane Quest Log window while decoupling it from the full-screen World Map. It also enhances the Objective Tracker with collapsible zone grouping and smooth scrolling.
 
 ---
 
@@ -22,7 +22,7 @@
 
 - **Seamless Modern UI Integration**:
   - Full support for Key Down action triggers (`ActionButtonUseKeyDown`).
-  - Integrated with the **Micro Menu** (Quest Log icon toggles Forever Quest Log directly).
+  - Integrated with the **Micro Menu** (Quest Log icon toggles the window directly).
   - Integrated with the **Addon Compartment** on the Minimap.
   - Default keyboard toggle bound to **L** (configurable in WoW Keybindings).
 
@@ -32,7 +32,7 @@
 
 | Command | Description |
 | :--- | :--- |
-| `/fql` or `/questlog` | Toggle the Forever Quest Log window. |
+| `/fql` or `/questlog` | Toggle the Quest Log window. |
 | `/fql opt` or `/fql config` | Open the addon settings panel. |
 | `/fql tracker` | Toggle Objective Tracker zone grouping on or off. |
 | `/fql reset` | Reset the Quest Log window position and scale to defaults. |
@@ -44,7 +44,7 @@
 ## ⚙️ Configuration & Options
 
 Access the settings panel via:
-- Game Menu (`ESC`) > **Options** > **AddOns** > **Forever Quest Log**
+- Game Menu (`ESC`) > **Options** > **AddOns** > **shupaz ForeverQuestLog**
 - Or type `/fql opt` in chat.
 
 ### Available Settings:
@@ -75,7 +75,7 @@ Access the settings panel via:
        ├── ForeverQuestLog.lua
        └── ForeverQuestLog.toc
    ```
-4. Start World of Warcraft and make sure **Forever Quest Log** is checked in your AddOn list.
+4. Start World of Warcraft and make sure **shupaz ForeverQuestLog** is checked in your AddOn list.
 
 ---
 
