@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="FOREVERQUESTLOG_TOGGLE" category="Forever Quest Log">
+        ForeverQuestLog_Toggle()
+    </Binding>
+</Bindings>
