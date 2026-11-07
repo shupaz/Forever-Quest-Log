@@ -67,17 +67,17 @@ Access the settings panel via:
 ## 📦 Manual Installation
 
 1. Download the latest release `.zip` from [Releases](https://github.com/shupaz/Forever-Quest-Log/releases) or CurseForge.
-2. Extract the `ForeverQuestLog` folder into your World of Warcraft directory:
+2. Extract the `shupaz_ForeverQuestLog` folder into your World of Warcraft directory:
    ```text
    World of Warcraft\_retail_\Interface\AddOns\
    ```
    *(or `_classic_` / `_classic_era_` / your client folder)*
 3. Ensure the folder hierarchy is:
    ```text
-   Interface\AddOns\ForeverQuestLog\
+   Interface\AddOns\shupaz_ForeverQuestLog\
        ├── Bindings.xml
-       ├── ForeverQuestLog.lua
-       └── ForeverQuestLog.toc
+       ├── shupaz_ForeverQuestLog.lua
+       └── shupaz_ForeverQuestLog.toc
    ```
 4. Start World of Warcraft and make sure **shupaz ForeverQuestLog** is checked in your AddOn list.
 

@@ -1,0 +1,9 @@
+package-as: shupaz_ForeverQuestLog
+
+ignore:
+  - .github
+  - assets
+  - release
+  - "*.bat"
+  - "*.ps1"
+  - README.md

@@ -4982,30 +4982,39 @@ function FQL:OpenToQuest(questID)
     self:Open()
 end
 
-function _G.ForeverQuestLog_Toggle()
+function _G.shupaz_ForeverQuestLog_Toggle()
     FQL:Toggle()
 end
+_G.ForeverQuestLog_Toggle = _G.shupaz_ForeverQuestLog_Toggle
 
-function _G.ForeverQuestLog_OnAddonCompartmentClick(_, buttonName)
+function _G.shupaz_ForeverQuestLog_OnAddonCompartmentClick(_, buttonName)
     if buttonName == "RightButton" then
         FQL:OpenOptions()
     else
         FQL:Toggle()
     end
 end
+_G.ForeverQuestLog_OnAddonCompartmentClick = _G.shupaz_ForeverQuestLog_OnAddonCompartmentClick
 
-function _G.ForeverQuestLog_OnAddonCompartmentEnter(_, menuButtonFrame)
+function _G.shupaz_ForeverQuestLog_OnAddonCompartmentEnter(_, menuButtonFrame)
     if not GameTooltip then return end
     GameTooltip:SetOwner(menuButtonFrame, "ANCHOR_LEFT")
-    GameTooltip:SetText("Forever Quest Log", 1, 0.82, 0)
+    GameTooltip:SetText("shupaz ForeverQuestLog", 1, 0.82, 0)
     GameTooltip:AddLine("Left-Click: Toggle standalone Quest Log window", 1, 1, 1, true)
     GameTooltip:AddLine("Right-Click: Open AddOn Settings", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
+_G.ForeverQuestLog_OnAddonCompartmentEnter = _G.shupaz_ForeverQuestLog_OnAddonCompartmentEnter
 
-function _G.ForeverQuestLog_OnAddonCompartmentLeave()
+function _G.shupaz_ForeverQuestLog_OnAddonCompartmentLeave()
     if GameTooltip then GameTooltip:Hide() end
 end
+_G.ForeverQuestLog_OnAddonCompartmentLeave = _G.shupaz_ForeverQuestLog_OnAddonCompartmentLeave
+
+_G["BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
+_G["BINDING_NAME_SHUPAZ_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
+_G["BINDING_HEADER_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
+_G["BINDING_NAME_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
 
 SLASH_FOREVERQUESTLOG1 = "/fql"
 SLASH_FOREVERQUESTLOG2 = "/questlog"
@@ -5122,13 +5131,27 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     if event == "PLAYER_LOGIN" then
-        ForeverQuestLogDB = ForeverQuestLogDB or {}
+        if shupazForeverQuestLogDB then
+            ForeverQuestLogDB = shupazForeverQuestLogDB
+        elseif ForeverQuestLogDB then
+            shupazForeverQuestLogDB = ForeverQuestLogDB
+        else
+            ForeverQuestLogDB = {}
+            shupazForeverQuestLogDB = ForeverQuestLogDB
+        end
         for k, v in pairs(DB_DEFAULTS) do
             if ForeverQuestLogDB[k] == nil then
                 ForeverQuestLogDB[k] = v
             end
         end
-        ForeverQuestLogCharDB = ForeverQuestLogCharDB or {}
+        if shupazForeverQuestLogCharDB then
+            ForeverQuestLogCharDB = shupazForeverQuestLogCharDB
+        elseif ForeverQuestLogCharDB then
+            shupazForeverQuestLogCharDB = ForeverQuestLogCharDB
+        else
+            ForeverQuestLogCharDB = {}
+            shupazForeverQuestLogCharDB = ForeverQuestLogCharDB
+        end
         for k, v in pairs(CHAR_DEFAULTS) do
             if ForeverQuestLogCharDB[k] == nil then
                 ForeverQuestLogCharDB[k] = type(v) == "table" and {} or v

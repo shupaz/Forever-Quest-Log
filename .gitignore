@@ -15,5 +15,7 @@ Desktop.ini
 # Packaging / Build artifacts
 *.zip
 *.bak
+*.bat
+*.ps1
 release/
 .release/
