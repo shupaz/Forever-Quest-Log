@@ -34,11 +34,11 @@
 
 | Standalone Quest Log | Objective Tracker Grouping |
 | :---: | :---: |
-| <img src="assets/screenshot_05.png" alt="Standalone Quest Log Window" width="450"/> | <img src="assets/screenshot_02.png" alt="Objective Tracker Zone Headers" width="300"/> |
+| <img src="assets/screenshot_01.png" alt="Standalone Quest Log Window" width="450"/> | <img src="assets/screenshot_02.png" alt="Objective Tracker Zone Headers" width="300"/> |
 
 | Tracker Scrollbar | Settings Panel |
 | :---: | :---: |
-| <img src="assets/screenshot_03.png" alt="Objective Tracker Scrollbar" width="300"/> | <img src="assets/screenshot_01.png" alt="Addon Settings Panel" width="450"/> |
+| <img src="assets/screenshot_03.png" alt="Objective Tracker Scrollbar" width="300"/> | <img src="assets/screenshot_05.png" alt="Addon Settings Panel" width="450"/> |
 
 ---
 

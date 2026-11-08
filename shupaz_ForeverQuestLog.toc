@@ -4,6 +4,8 @@
 ## Author: shupaz
 ## Version: 1.0.0
 ## IconTexture: Interface\QuestFrame\UI-QuestLog-BookIcon
+## X-Curse-Project-ID: 1788642
+## X-Wago-ID: kGr9Z7Ky
 ## AddonCompartmentFunc: shupaz_ForeverQuestLog_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: shupaz_ForeverQuestLog_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: shupaz_ForeverQuestLog_OnAddonCompartmentLeave
