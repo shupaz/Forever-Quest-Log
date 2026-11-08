@@ -11,4 +11,9 @@
 ## SavedVariablesPerCharacter: shupazForeverQuestLogCharDB
 
 Bindings.xml
-shupaz_ForeverQuestLog.lua
+src\Init.lua
+src\Utils.lua
+src\Hooks.lua
+src\QuestLog.lua
+src\Tracker.lua
+src\Options.lua
