@@ -1,7 +1,7 @@
 # shupaz ForeverQuestLog
 
 <p align="center">
-  <img src="assets/logo.png" alt="shupaz ForeverQuestLog Logo" width="220" />
+  <img src="https://raw.githubusercontent.com/shupaz/Forever-Quest-Log/main/assets/logo.png" alt="shupaz ForeverQuestLog Logo" width="220" />
 </p>
 
 <p align="center">
@@ -54,11 +54,11 @@
 
 | Standalone Quest Log | Objective Tracker Grouping |
 | :---: | :---: |
-| <img src="assets/screenshot_01.png" alt="Standalone Quest Log Window" width="450"/> | <img src="assets/screenshot_02.png" alt="Objective Tracker Zone Headers" width="300"/> |
+| <img src="https://raw.githubusercontent.com/shupaz/Forever-Quest-Log/main/assets/screenshot_01.png" alt="Standalone Quest Log Window" width="450"/> | <img src="https://raw.githubusercontent.com/shupaz/Forever-Quest-Log/main/assets/screenshot_02.png" alt="Objective Tracker Zone Headers" width="300"/> |
 
 | Tracker Scrollbar | Settings Panel |
 | :---: | :---: |
-| <img src="assets/screenshot_03.png" alt="Objective Tracker Scrollbar" width="300"/> | <img src="assets/screenshot_05.png" alt="Addon Settings Panel" width="450"/> |
+| <img src="https://raw.githubusercontent.com/shupaz/Forever-Quest-Log/main/assets/screenshot_03.png" alt="Objective Tracker Scrollbar" width="300"/> | <img src="https://raw.githubusercontent.com/shupaz/Forever-Quest-Log/main/assets/screenshot_05.png" alt="Addon Settings Panel" width="450"/> |
 
 ---
 
