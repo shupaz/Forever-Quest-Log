@@ -19,3 +19,7 @@ Desktop.ini
 *.ps1
 release/
 .release/
+
+# IA Agents
+scratch/
+AGENT_HANDOFF.md

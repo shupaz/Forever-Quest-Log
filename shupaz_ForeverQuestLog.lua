@@ -858,6 +858,38 @@ local function SetupMapAndBindingHooks()
             end
         end)
     end
+
+    -- Ensure Escape closes the Quest Log window seamlessly
+    if type(_G.CloseSpecialWindows) == "function" then
+        hooksecurefunc("CloseSpecialWindows", function()
+            if FQL.frame and FQL.frame:IsShown() then
+                FQL.frame:Hide()
+            end
+        end)
+    end
+
+    if type(_G.CloseAllWindows) == "function" then
+        hooksecurefunc("CloseAllWindows", function()
+            if FQL.frame and FQL.frame:IsShown() then
+                FQL.frame:Hide()
+            end
+        end)
+    end
+
+    if type(_G.ToggleGameMenu) == "function" then
+        hooksecurefunc("ToggleGameMenu", function()
+            if FQL.frame and FQL.frame:IsShown() then
+                FQL.frame:Hide()
+                if _G.GameMenuFrame and _G.GameMenuFrame:IsShown() then
+                    if HideUIPanel then
+                        pcall(HideUIPanel, _G.GameMenuFrame)
+                    else
+                        pcall(_G.GameMenuFrame.Hide, _G.GameMenuFrame)
+                    end
+                end
+            end
+        end)
+    end
 end
 
 -- ============================================================
@@ -878,6 +910,32 @@ local function TryInsertQuestChatLink(questID, title, level)
         link = "|cffffff00|Hquest:" .. tostring(questID) .. ":" .. tostring(level or -1) .. "|h[" .. tostring(title or ("Quest " .. questID)) .. "]|h|r"
     end
     return ChatEdit_InsertLink(link) and true or false
+end
+
+local function InsertOrOpenQuestChatLink(questID, title, level)
+    if not questID then return false end
+    local link
+    if GetQuestLink then
+        local ok, l = pcall(GetQuestLink, questID)
+        if ok and SafeStr(l) then link = l end
+    end
+    if not link then
+        link = "|cffffff00|Hquest:" .. tostring(questID) .. ":" .. tostring(level or -1) .. "|h[" .. tostring(title or ("Quest " .. questID)) .. "]|h|r"
+    end
+    if ChatEdit_InsertLink and ChatEdit_InsertLink(link) then
+        return true
+    end
+    if ChatFrame_OpenChat then
+        ChatFrame_OpenChat(link)
+        return true
+    end
+    return false
+end
+
+local function GetQuestWebURL(questID)
+    questID = SafeNum(questID)
+    if not questID or questID <= 0 then return "" end
+    return "https://www.wowhead.com/forever/quest=" .. tostring(questID)
 end
 
 local function AbandonSelectedQuest(questID, title)
@@ -1011,13 +1069,112 @@ function FQL:ShowCopyPopup(titleText, urlText)
 
         local close = CreateFrame("Button", nil, box, "UIPanelCloseButton")
         close:SetPoint("TOPRIGHT", -4, -4)
+
+        eb:SetScript("OnKeyDown", function(self, key)
+            if key == "C" and IsControlKeyDown and IsControlKeyDown() then
+                box.hint:SetText("|cff00ff00Copied to clipboard!|r")
+            end
+        end)
     end
 
     box.title:SetText(titleText or "Quest Link")
+    box.hint:SetText("Press Ctrl+C to copy:")
     box.editBox:SetText(urlText or "")
     box:Show()
     box.editBox:SetFocus()
     box.editBox:HighlightText()
+end
+
+function FQL:GetOrCreateLinkHoverCard()
+    if self.linkHoverCard then return self.linkHoverCard end
+
+    local card = CreateFrame("Frame", "shupaz_ForeverQuestLogHoverCard", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    self.linkHoverCard = card
+    card:SetSize(350, 66)
+    card:SetFrameStrata("TOOLTIP")
+    card:SetToplevel(true)
+    card:EnableMouse(true)
+    card:SetClampedToScreen(true)
+    tinsert(UISpecialFrames, "shupaz_ForeverQuestLogHoverCard")
+
+    SetBackdrop(card, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 12, 3)
+    card:SetBackdropColor(0.07, 0.06, 0.045, 0.98)
+    card:SetBackdropBorderColor(0.85, 0.68, 0.28, 1)
+
+    local title = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    card.title = title
+    title:SetPoint("TOPLEFT", 10, -7)
+    title:SetTextColor(1, 0.82, 0)
+    title:SetText("Wowhead Quest Link")
+
+    local hint = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    card.hint = hint
+    hint:SetPoint("TOPRIGHT", -10, -7)
+    hint:SetTextColor(0.35, 1, 0.35)
+    hint:SetText("Press Ctrl+C to copy")
+
+    local eb = CreateFrame("EditBox", nil, card, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    card.editBox = eb
+    eb:SetSize(330, 22)
+    eb:SetPoint("TOPLEFT", 10, -24)
+    eb:SetFontObject("ChatFontNormal")
+    eb:SetAutoFocus(false)
+    eb:SetTextInsets(6, 6, 0, 0)
+    SetBackdrop(eb, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 10, 2)
+    eb:SetBackdropColor(0.04, 0.04, 0.03, 1)
+    eb:SetBackdropBorderColor(0.55, 0.45, 0.25, 1)
+
+    local subHint = card:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    card.subHint = subHint
+    subHint:SetPoint("BOTTOMLEFT", 10, 5)
+    subHint:SetText("Click to pin | Shift-Click for chat link")
+    subHint:SetTextColor(0.65, 0.60, 0.50)
+
+    eb:SetScript("OnKeyDown", function(self, key)
+        if key == "C" and IsControlKeyDown and IsControlKeyDown() then
+            card.hint:SetText("|cff00ff00Copied to clipboard!|r")
+            card.hint:SetTextColor(0.2, 1.0, 0.2)
+        elseif key == "ESCAPE" then
+            self:ClearFocus()
+            card:Hide()
+        end
+    end)
+    eb:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        card:Hide()
+    end)
+    eb:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        card:Hide()
+    end)
+    eb:SetScript("OnEditFocusLost", function(self)
+        if not card.isPinned and not card:IsMouseOver() and (not card.anchor or not card.anchor:IsMouseOver()) then
+            card:Hide()
+        end
+    end)
+
+    card:SetScript("OnEnter", function(self)
+        self.mouseInside = true
+    end)
+    card:SetScript("OnLeave", function(self)
+        self.mouseInside = false
+        if not self.isPinned then
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.15, function()
+                    if not card.isPinned and not card:IsMouseOver() and (not card.anchor or not card.anchor:IsMouseOver()) then
+                        card.editBox:ClearFocus()
+                        card:Hide()
+                    end
+                end)
+            else
+                card.editBox:ClearFocus()
+                card:Hide()
+            end
+        end
+    end)
+
+    card:Hide()
+    return card
 end
 
 -- ============================================================
@@ -1086,7 +1243,7 @@ function FQL:ShowQuestContextMenu(anchorButton, questEntry)
         {
             label = "Wowhead Quest Link",
             fn = function()
-                FQL:ShowCopyPopup(questEntry.title, "https://www.wowhead.com/classic/quest=" .. tostring(questID))
+                FQL:ShowCopyPopup(questEntry.title, GetQuestWebURL(questID))
             end,
         },
         {
@@ -1372,7 +1529,54 @@ function FQL:CreateMainFrame()
     frame:RegisterForDrag("LeftButton")
     frame:Hide()
 
-    tinsert(UISpecialFrames, "shupaz_ForeverQuestLogFrame")
+    _G["shupaz_ForeverQuestLogFrame"] = frame
+
+    local alreadyInSpecial = false
+    if UISpecialFrames then
+        for _, name in ipairs(UISpecialFrames) do
+            if name == "shupaz_ForeverQuestLogFrame" then
+                alreadyInSpecial = true
+                break
+            end
+        end
+        if not alreadyInSpecial then
+            tinsert(UISpecialFrames, "shupaz_ForeverQuestLogFrame")
+        end
+    end
+
+    if frame.SetPropagateKeyboardInput then
+        frame:SetPropagateKeyboardInput(true)
+        local origOnKeyDown = frame:GetScript("OnKeyDown")
+        frame:SetScript("OnKeyDown", function(self, key)
+            if origOnKeyDown then
+                pcall(origOnKeyDown, self, key)
+            end
+            if key == "ESCAPE" then
+                if self.searchBox and self.searchBox:HasFocus() then
+                    return
+                end
+                if FQL.contextMenu and FQL.contextMenu:IsShown() then
+                    FQL.contextMenu:Hide()
+                    if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+                    return
+                end
+                if FQL.linkHoverCard and FQL.linkHoverCard:IsShown() then
+                    FQL.linkHoverCard.editBox:ClearFocus()
+                    FQL.linkHoverCard:Hide()
+                    if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+                    return
+                end
+                if self.SetPropagateKeyboardInput then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                self:Hide()
+            else
+                if self.SetPropagateKeyboardInput then
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end
+        end)
+    end
 
     -- Hide default single Inset from ButtonFrameTemplate (we render dual Left & Right insets)
     if frame.Inset then
@@ -1462,6 +1666,10 @@ function FQL:CreateMainFrame()
     frame:SetScript("OnHide", function()
         PlayCloseSound()
         if FQL.contextMenu then FQL.contextMenu:Hide() end
+        if FQL.linkHoverCard then
+            FQL.linkHoverCard.editBox:ClearFocus()
+            FQL.linkHoverCard:Hide()
+        end
     end)
 
     -- ========================================================
@@ -1719,6 +1927,106 @@ function FQL:CreateMainFrame()
         end
     end)
     specialItemBtn:Hide()
+
+    -- Quest Link Button (Wowhead / Web link with hover-to-copy in Detail header)
+    local questLinkBtn = CreateFrame("Button", "shupaz_ForeverQuestLogLinkBtn", detailContent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    frame.questLinkBtn = questLinkBtn
+    questLinkBtn:SetSize(64, 20)
+    SetBackdrop(questLinkBtn, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 10, 2)
+    questLinkBtn:SetBackdropColor(0.14, 0.10, 0.06, 0.96)
+    questLinkBtn:SetBackdropBorderColor(0.60, 0.46, 0.22, 1)
+    questLinkBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    questLinkBtn.text = questLinkBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    questLinkBtn.text:SetPoint("CENTER", 0, 0)
+    questLinkBtn.text:SetText("|cffffd200Wowhead|r")
+
+    questLinkBtn:SetScript("OnEnter", function(self)
+        if not self.questID then return end
+        self:SetBackdropBorderColor(1.0, 0.85, 0.35, 1)
+        local card = FQL:GetOrCreateLinkHoverCard()
+        card.anchor = self
+        card.isPinned = false
+        card.title:SetText(self.title and (self.title .. " - Wowhead") or "Wowhead Quest Link")
+        card.hint:SetText("Press Ctrl+C to copy")
+        card.hint:SetTextColor(0.35, 1, 0.35)
+        card.editBox:SetText(self.url or (GetQuestWebURL(self.questID)))
+
+        local top = self:GetTop() or 0
+        local screenHeight = UIParent:GetHeight() or 768
+        card:ClearAllPoints()
+        if top > (screenHeight - 80) then
+            card:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
+        else
+            card:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 0, 4)
+        end
+        card:Show()
+        card.editBox:SetFocus()
+        card.editBox:HighlightText()
+    end)
+
+    questLinkBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(0.60, 0.46, 0.22, 1)
+        local card = FQL.linkHoverCard
+        if card and not card.isPinned then
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.2, function()
+                    if card and not card.isPinned and not card:IsMouseOver() and not self:IsMouseOver() then
+                        card.editBox:ClearFocus()
+                        card:Hide()
+                    end
+                end)
+            else
+                card.editBox:ClearFocus()
+                card:Hide()
+            end
+        end
+    end)
+
+    questLinkBtn:SetScript("OnClick", function(self, button)
+        PlayClickSound()
+        if not self.questID then return end
+        if IsModifiedClick and IsModifiedClick("CHATLINK") then
+            InsertOrOpenQuestChatLink(self.questID, self.title, self.level)
+            return
+        end
+        local card = FQL.linkHoverCard
+        if card and card:IsShown() then
+            card.isPinned = true
+            card.hint:SetText("|cffffff00Pinned!|r Press Ctrl+C")
+            card.hint:SetTextColor(1, 1, 0.4)
+        end
+        FQL:ShowCopyPopup(self.title, self.url or (GetQuestWebURL(self.questID)))
+    end)
+    questLinkBtn:Hide()
+
+    -- Clickable Quest Title (supports hover tooltip, click to copy URL, shift-click for chat link)
+    local dTitleBtn = CreateFrame("Button", nil, detailContent)
+    frame.detailTitleBtn = dTitleBtn
+    dTitleBtn:SetAllPoints(dTitle)
+    dTitleBtn:SetScript("OnEnter", function(self)
+        local qID = frame.questLinkBtn and frame.questLinkBtn.questID
+        if not GameTooltip or not qID then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT", 0, -4)
+        GameTooltip:SetText(frame.questLinkBtn.title or "Quest", 1, 0.82, 0)
+        GameTooltip:AddLine(GetQuestWebURL(qID), 0.3, 0.8, 1, false)
+        GameTooltip:AddLine("Click or hover [Wowhead] button to copy URL", 0.75, 0.75, 0.75)
+        GameTooltip:AddLine("Shift-Click to link quest in chat", 0.75, 0.75, 0.75)
+        GameTooltip:Show()
+    end)
+    dTitleBtn:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    dTitleBtn:SetScript("OnClick", function(self, button)
+        local qID = frame.questLinkBtn and frame.questLinkBtn.questID
+        if not qID then return end
+        if IsModifiedClick and IsModifiedClick("CHATLINK") then
+            InsertOrOpenQuestChatLink(qID, frame.questLinkBtn.title, frame.questLinkBtn.level)
+            return
+        end
+        PlayClickSound()
+        FQL:ShowCopyPopup(frame.questLinkBtn.title, frame.questLinkBtn.url or (GetQuestWebURL(qID)))
+    end)
 
     local dObjSummary = detailContent:CreateFontString(nil, "OVERLAY", "QuestFont")
     frame.detailObjSummary = dObjSummary
@@ -2389,6 +2697,11 @@ function FQL:RefreshQuestDetail()
         frame.shareBtn:Disable()
         frame.trackBtn:Disable()
         frame.mapBtn:Disable()
+        if frame.questLinkBtn then frame.questLinkBtn:Hide() end
+        if self.linkHoverCard then
+            self.linkHoverCard.editBox:ClearFocus()
+            self.linkHoverCard:Hide()
+        end
         return
     end
 
@@ -2430,8 +2743,23 @@ function FQL:RefreshQuestDetail()
         frame.specialItemBtn:Hide()
     end
 
+    -- Quest Link Button (Wowhead / Web link with hover-to-copy)
+    frame.questLinkBtn.questID = questID
+    frame.questLinkBtn.title = qEntry.title
+    frame.questLinkBtn.level = qEntry.level
+    local questUrl = GetQuestWebURL(questID)
+    frame.questLinkBtn.url = questUrl
+
+    frame.questLinkBtn:ClearAllPoints()
+    if frame.specialItemBtn:IsShown() then
+        frame.questLinkBtn:SetPoint("TOPRIGHT", frame.specialItemBtn, "TOPLEFT", -6, 0)
+    else
+        frame.questLinkBtn:SetPoint("TOPRIGHT", frame.detailContent, "TOPRIGHT", -2, -2)
+    end
+    frame.questLinkBtn:Show()
+
     -- Title
-    local titleRightPad = frame.specialItemBtn:IsShown() and 44 or 0
+    local titleRightPad = (frame.specialItemBtn:IsShown() and 44 or 0) + (frame.questLinkBtn:GetWidth() + 6)
     frame.detailTitle:ClearAllPoints()
     frame.detailTitle:SetPoint("TOPLEFT", frame.detailContent, "TOPLEFT", 0, -y)
     frame.detailTitle:SetWidth(contentWidth - titleRightPad)
