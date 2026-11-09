@@ -5,7 +5,7 @@ end
 _G.shupaz_ForeverQuestLog = FQL
 
 FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.0"
+FQL.VERSION = "1.0.1"
 
 -- Keybinding label in Options > Keybindings > AddOns
 BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG = "shupaz ForeverQuestLog"
