@@ -2,7 +2,7 @@
 ## Title: shupaz ForeverQuestLog
 ## Notes: Replaces the embedded World Map Quest Log with a standalone Classic dual-pane Quest Log window.
 ## Author: shupaz
-## Version: 1.0.1
+## Version: 1.0.2
 ## IconTexture: Interface\QuestFrame\UI-QuestLog-BookIcon
 ## X-Curse-Project-ID: 1788642
 ## X-Wago-ID: kGr9Z7Ky
@@ -12,10 +12,9 @@
 ## SavedVariables: shupazForeverQuestLogDB
 ## SavedVariablesPerCharacter: shupazForeverQuestLogCharDB
 
-Bindings.xml
-src\Init.lua
 src\Utils.lua
 src\Hooks.lua
 src\QuestLog.lua
 src\Tracker.lua
 src\Options.lua
+src\Init.lua

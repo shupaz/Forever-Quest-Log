@@ -32,6 +32,7 @@ local TryInsertQuestChatLink    = FQL.TryInsertQuestChatLink
 local InsertOrOpenQuestChatLink = FQL.InsertOrOpenQuestChatLink
 local GetQuestWebURL            = FQL.GetQuestWebURL
 local AbandonSelectedQuest      = FQL.AbandonSelectedQuest
+local AbandonAllQuests          = FQL.AbandonAllQuests
 local ShareSelectedQuest        = FQL.ShareSelectedQuest
 local ShowQuestOnWorldMap       = FQL.ShowQuestOnWorldMap
 
@@ -114,7 +115,7 @@ function FQL:GetOrCreateLinkHoverCard()
     card:SetClampedToScreen(true)
     tinsert(UISpecialFrames, "shupaz_ForeverQuestLogHoverCard")
 
-    SetBackdrop(card, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 12, 3)
+    SetBackdrop(card, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 12, 3)
     card:SetBackdropColor(0.07, 0.06, 0.045, 0.98)
     card:SetBackdropBorderColor(0.85, 0.68, 0.28, 1)
 
@@ -137,7 +138,7 @@ function FQL:GetOrCreateLinkHoverCard()
     eb:SetFontObject("ChatFontNormal")
     eb:SetAutoFocus(false)
     eb:SetTextInsets(6, 6, 0, 0)
-    SetBackdrop(eb, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 10, 2)
+    SetBackdrop(eb, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 10, 2)
     eb:SetBackdropColor(0.04, 0.04, 0.03, 1)
     eb:SetBackdropBorderColor(0.55, 0.45, 0.25, 1)
 
@@ -429,25 +430,167 @@ function FQL:SavePosition()
     end
 end
 
--- Respect the position of default Blizzard windows (CharacterFrame, SpellBookFrame,
--- ProfessionsFrame, PlayerSpellsFrame, FriendsFrame, PVEFrame, etc.):
--- Sits at the standard UIPanel left anchor (TOPLEFT, UIParent, TOPLEFT, 16, -116),
--- and pushes to the right side-by-side when a narrow left default window is open.
-local DEFAULT_LEFT_PANELS = {
-    "CharacterFrame",
-    "SpellBookFrame",
-    "FriendsFrame",
-    "PVEFrame",
-    "DressUpFrame",
-    "GossipFrame",
-    "QuestFrame",
-    "MerchantFrame",
-    "MailFrame",
-    "BankFrame",
-    "TradeFrame",
-    "GuildRegistrarFrame",
-    "TabardFrame",
-}
+-- Dynamically inspect Blizzard's UIPanelWindows registry and ShowUIPanel/HideUIPanel
+-- so we never have to hardcode individual frame names.
+local hookedBlizzardPanels = {}
+
+local function IsFrameShownSafe(f)
+    if not f or type(f.IsShown) ~= "function" then return false end
+    local ok, shown = pcall(f.IsShown, f)
+    return ok and shown == true
+end
+
+local function GetUIPanelWidthAndArea(frameName, f, info)
+    -- Small (windowed / minimized) WorldMapFrame can sit side-by-side with Forever Quest Log
+    if f == _G.WorldMapFrame or frameName == "WorldMapFrame" then
+        local isMax = false
+        if f and type(f.IsMaximized) == "function" then
+            local okM, m = pcall(f.IsMaximized, f)
+            if okM and m == true then isMax = true end
+        end
+        if not isMax then
+            local okW, width = pcall(f.GetWidth, f)
+            local wNum = (okW and SafeNum(width) and width > 100) and width or 702
+            return wNum, false
+        else
+            return 1000, true
+        end
+    end
+
+    local area = (type(info) == "table" and SafeStr(info.area)) or "left"
+    local wNum = nil
+
+    local okW, width = pcall(f.GetWidth, f)
+    if okW and SafeNum(width) and width > 100 then
+        wNum = width
+    end
+    if not wNum and type(info) == "table" then
+        wNum = SafeNum(info.width)
+        local extra = SafeNum(info.extraWidth)
+        if wNum and extra then wNum = wNum + extra end
+    end
+    if not wNum then
+        wNum = (area == "doublewide" or area == "full") and 800 or 352
+    end
+
+    local isWide = (area == "doublewide" or area == "full" or wNum >= 650)
+    return wNum, isWide
+end
+
+local function GetPanelRightEdge(frameName, f, info, myScale)
+    local fScale = 1
+    if f.GetEffectiveScale then
+        local okS, s = pcall(f.GetEffectiveScale, f)
+        if okS and SafeNum(s) and s > 0 then fScale = s end
+    end
+
+    local okR, right = pcall(f.GetRight, f)
+    local rNum = okR and SafeNum(right) or nil
+    if rNum and rNum > 0 then
+        return math.floor((rNum * fScale) / (myScale > 0 and myScale or 1))
+    end
+
+    local wNum = GetUIPanelWidthAndArea(frameName, f, info)
+    return math.floor(((16 + wNum) * fScale) / (myScale > 0 and myScale or 1))
+end
+
+local function HookPanelHideOnce(f)
+    if not f or hookedBlizzardPanels[f] or type(f.HookScript) ~= "function" then return end
+    hookedBlizzardPanels[f] = true
+    f:HookScript("OnShow", function()
+        if FQL.frame and IsFrameShownSafe(FQL.frame) then
+            FQL:UpdateDefaultPanelPosition()
+        end
+    end)
+    f:HookScript("OnHide", function()
+        if FQL.frame and IsFrameShownSafe(FQL.frame) then
+            FQL:UpdateDefaultPanelPosition()
+        end
+    end)
+    if f == _G.WorldMapFrame then
+        f:HookScript("OnSizeChanged", function()
+            if FQL.frame and IsFrameShownSafe(FQL.frame) then
+                FQL:UpdateDefaultPanelPosition()
+            end
+        end)
+    end
+end
+
+local function GetActiveBlizzardPanels()
+    local narrowPanels = {}
+    local widePanels = {}
+    local seen = {}
+
+    local function CheckFrame(frameName, f, info)
+        if not f or f == FQL.frame or seen[f] or not IsFrameShownSafe(f) then return end
+        seen[f] = true
+        HookPanelHideOnce(f)
+        local _, isWide = GetUIPanelWidthAndArea(frameName, f, info)
+        if isWide then
+            widePanels[#widePanels + 1] = { name = frameName, frame = f, info = info }
+        else
+            narrowPanels[#narrowPanels + 1] = { name = frameName, frame = f, info = info }
+        end
+    end
+
+    -- 1. Check UIParent's active slot attributes first
+    if UIParent and UIParent.GetAttribute then
+        for _, slot in ipairs({ "left", "center", "right", "doublewide", "fullscreen" }) do
+            local ok, slotFrame = pcall(UIParent.GetAttribute, UIParent, slot)
+            if ok and type(slotFrame) == "table" then
+                local name = slotFrame.GetName and slotFrame:GetName()
+                local info = (name and _G.UIPanelWindows and _G.UIPanelWindows[name]) or { area = slot }
+                CheckFrame(name or slot, slotFrame, info)
+            end
+        end
+    end
+
+    -- 2. Also scan Blizzard's UIPanelWindows table for any shown panel
+    if type(_G.UIPanelWindows) == "table" then
+        for frameName, info in pairs(_G.UIPanelWindows) do
+            local f = _G[frameName]
+            if f then
+                CheckFrame(frameName, f, info)
+            end
+        end
+    end
+
+    return narrowPanels, widePanels
+end
+
+function FQL:PrepareForDefaultPanelOpen()
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.useDefaultPosition == false then
+        return
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        return
+    end
+
+    local narrowPanels, widePanels = GetActiveBlizzardPanels()
+
+    for _, entry in ipairs(widePanels) do
+        if CanChangeFrame(entry.frame) then
+            if HideUIPanel then
+                pcall(HideUIPanel, entry.frame)
+            else
+                pcall(entry.frame.Hide, entry.frame)
+            end
+        end
+    end
+
+    if #narrowPanels >= 2 then
+        for i = 2, #narrowPanels do
+            local f = narrowPanels[i].frame
+            if CanChangeFrame(f) then
+                if HideUIPanel then
+                    pcall(HideUIPanel, f)
+                else
+                    pcall(f.Hide, f)
+                end
+            end
+        end
+    end
+end
 
 function FQL:UpdateDefaultPanelPosition()
     if not self.frame then return end
@@ -455,24 +598,25 @@ function FQL:UpdateDefaultPanelPosition()
         return
     end
 
+    local narrowPanels, widePanels = GetActiveBlizzardPanels()
+
+    if IsFrameShownSafe(self.frame) and (#widePanels > 0 or #narrowPanels >= 2) then
+        self:Close()
+        return
+    end
+
     local xOff = 16
     local yOff = -116
+    local myScale = 1
+    if self.frame.GetEffectiveScale then
+        local okS, s = pcall(self.frame.GetEffectiveScale, self.frame)
+        if okS and SafeNum(s) and s > 0 then myScale = s end
+    end
 
-    for _, frameName in ipairs(DEFAULT_LEFT_PANELS) do
-        local f = _G[frameName]
-        if f and f.IsShown and f:IsShown() then
-            local okR, right = pcall(f.GetRight, f)
-            local okW, width = pcall(f.GetWidth, f)
-            local rNum = okR and SafeNum(right) or nil
-            local wNum = okW and SafeNum(width) or nil
-            if rNum and rNum > 0 and (not wNum or wNum < 650) then
-                local fScale = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
-                local myScale = (self.frame.GetEffectiveScale and self.frame:GetEffectiveScale()) or 1
-                local normalizedRight = (rNum * fScale) / (myScale > 0 and myScale or 1)
-                if normalizedRight + 12 > xOff then
-                    xOff = math.floor(normalizedRight + 12)
-                end
-            end
+    for _, entry in ipairs(narrowPanels) do
+        local rightEdge = GetPanelRightEdge(entry.name, entry.frame, entry.info, myScale)
+        if rightEdge + 12 > xOff then
+            xOff = rightEdge + 12
         end
     end
 
@@ -480,33 +624,48 @@ function FQL:UpdateDefaultPanelPosition()
     self.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", xOff, yOff)
 end
 
+function FQL:HookKnownPanels()
+    for _, name in ipairs({ "GameMenuFrame", "SettingsPanel" }) do
+        local f = _G[name]
+        if f and not hookedBlizzardPanels[f] and type(f.HookScript) == "function" then
+            hookedBlizzardPanels[f] = true
+            f:HookScript("OnShow", function()
+                FQL:Close()
+            end)
+        end
+    end
+end
+
 function FQL:SetupDefaultPanelHooks()
+    self:HookKnownPanels()
     if self._defaultPanelHooksInstalled then return end
     self._defaultPanelHooksInstalled = true
 
-    if type(_G.UpdateUIPanelPositions) == "function" then
-        hooksecurefunc("UpdateUIPanelPositions", function()
-            if FQL.frame and FQL.frame:IsShown() then
+    if type(_G.ShowUIPanel) == "function" then
+        hooksecurefunc("ShowUIPanel", function(panelFrame)
+            if panelFrame and panelFrame ~= FQL.frame then
+                HookPanelHideOnce(panelFrame)
+            end
+            if FQL.frame and IsFrameShownSafe(FQL.frame) then
                 FQL:UpdateDefaultPanelPosition()
             end
         end)
     end
 
-    for _, frameName in ipairs(DEFAULT_LEFT_PANELS) do
-        local f = _G[frameName]
-        if f and f.HookScript and not f._fqlPosHooked then
-            f._fqlPosHooked = true
-            f:HookScript("OnShow", function()
-                if FQL.frame and FQL.frame:IsShown() then
-                    FQL:UpdateDefaultPanelPosition()
-                end
-            end)
-            f:HookScript("OnHide", function()
-                if FQL.frame and FQL.frame:IsShown() then
-                    FQL:UpdateDefaultPanelPosition()
-                end
-            end)
-        end
+    if type(_G.HideUIPanel) == "function" then
+        hooksecurefunc("HideUIPanel", function()
+            if FQL.frame and IsFrameShownSafe(FQL.frame) then
+                FQL:UpdateDefaultPanelPosition()
+            end
+        end)
+    end
+
+    if type(_G.UpdateUIPanelPositions) == "function" then
+        hooksecurefunc("UpdateUIPanelPositions", function()
+            if FQL.frame and IsFrameShownSafe(FQL.frame) then
+                FQL:UpdateDefaultPanelPosition()
+            end
+        end)
     end
 end
 
@@ -559,40 +718,6 @@ function FQL:CreateMainFrame()
         if not alreadyInSpecial then
             tinsert(UISpecialFrames, "shupaz_ForeverQuestLogFrame")
         end
-    end
-
-    if frame.SetPropagateKeyboardInput then
-        frame:SetPropagateKeyboardInput(true)
-        local origOnKeyDown = frame:GetScript("OnKeyDown")
-        frame:SetScript("OnKeyDown", function(self, key)
-            if origOnKeyDown then
-                pcall(origOnKeyDown, self, key)
-            end
-            if key == "ESCAPE" then
-                if self.searchBox and self.searchBox:HasFocus() then
-                    return
-                end
-                if FQL.contextMenu and FQL.contextMenu:IsShown() then
-                    FQL.contextMenu:Hide()
-                    if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
-                    return
-                end
-                if FQL.linkHoverCard and FQL.linkHoverCard:IsShown() then
-                    FQL.linkHoverCard.editBox:ClearFocus()
-                    FQL.linkHoverCard:Hide()
-                    if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
-                    return
-                end
-                if self.SetPropagateKeyboardInput then
-                    self:SetPropagateKeyboardInput(false)
-                end
-                self:Hide()
-            else
-                if self.SetPropagateKeyboardInput then
-                    self:SetPropagateKeyboardInput(true)
-                end
-            end
-        end)
     end
 
     -- Hide default single Inset from ButtonFrameTemplate (we render dual Left & Right insets)
@@ -664,10 +789,13 @@ function FQL:CreateMainFrame()
     end
 
     frame:SetScript("OnDragStart", function(self)
-        if shupazForeverQuestLogDB and shupazForeverQuestLogDB.lockWindow then return end
+        if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.lockWindow ~= false then return end
+        self.isDraggingFQL = true
         self:StartMoving()
     end)
     frame:SetScript("OnDragStop", function(self)
+        if not self.isDraggingFQL then return end
+        self.isDraggingFQL = false
         self:StopMovingOrSizing()
         FQL:SavePosition()
     end)
@@ -676,6 +804,7 @@ function FQL:CreateMainFrame()
         PlayOpenSound()
         FQL:SetupDefaultPanelHooks()
         if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.useDefaultPosition ~= false then
+            FQL:PrepareForDefaultPanelOpen()
             FQL:UpdateDefaultPanelPosition()
         end
         FQL:Refresh()
@@ -945,104 +1074,121 @@ function FQL:CreateMainFrame()
     end)
     specialItemBtn:Hide()
 
-    -- Quest Link Button (Wowhead / Web link with hover-to-copy in Detail header)
-    local questLinkBtn = CreateFrame("Button", "shupaz_ForeverQuestLogLinkBtn", detailContent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    frame.questLinkBtn = questLinkBtn
-    questLinkBtn:SetSize(64, 20)
-    SetBackdrop(questLinkBtn, "Interface\Buttons\WHITE8X8", "Interface\Tooltips\UI-Tooltip-Border", 10, 2)
-    questLinkBtn:SetBackdropColor(0.14, 0.10, 0.06, 0.96)
-    questLinkBtn:SetBackdropBorderColor(0.60, 0.46, 0.22, 1)
-    questLinkBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    -- ========================================================
+    -- DEDICATED WOWHEAD URL BAR (Dockable at Bottom or Top)
+    -- ========================================================
+    local wowheadBar = CreateFrame("Frame", "shupaz_ForeverQuestLogWowheadBar", frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    frame.wowheadBar = wowheadBar
+    wowheadBar:SetHeight(26)
+    SetBackdrop(wowheadBar, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 10, 2)
+    wowheadBar:SetBackdropColor(0.07, 0.06, 0.045, 0.98)
+    wowheadBar:SetBackdropBorderColor(0.55, 0.43, 0.22, 1)
 
-    questLinkBtn.text = questLinkBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    questLinkBtn.text:SetPoint("CENTER", 0, 0)
-    questLinkBtn.text:SetText("|cffffd200Wowhead|r")
+    local whLabel = wowheadBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    wowheadBar.label = whLabel
+    whLabel:SetPoint("LEFT", 10, 0)
+    whLabel:SetText("|cffffd200Wowhead URL:|r")
 
-    questLinkBtn:SetScript("OnEnter", function(self)
-        if not self.questID then return end
-        self:SetBackdropBorderColor(1.0, 0.85, 0.35, 1)
-        local card = FQL:GetOrCreateLinkHoverCard()
-        card.anchor = self
-        card.isPinned = false
-        card.title:SetText(self.title and (self.title .. " - Wowhead") or "Wowhead Quest Link")
-        card.hint:SetText("Press Ctrl+C to copy")
-        card.hint:SetTextColor(0.35, 1, 0.35)
-        card.editBox:SetText(self.url or (GetQuestWebURL(self.questID)))
+    local whHint = wowheadBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    wowheadBar.hint = whHint
+    whHint:SetPoint("RIGHT", -10, 0)
+    whHint:SetText("Hover or Click + Ctrl+C to copy")
+    whHint:SetTextColor(0.78, 0.74, 0.62)
 
-        local top = self:GetTop() or 0
-        local screenHeight = UIParent:GetHeight() or 768
-        card:ClearAllPoints()
-        if top > (screenHeight - 80) then
-            card:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
-        else
-            card:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 0, 4)
-        end
-        card:Show()
-        card.editBox:SetFocus()
-        card.editBox:HighlightText()
-    end)
+    local whEditBox = CreateFrame("EditBox", "shupaz_ForeverQuestLogWowheadEditBox", wowheadBar, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    wowheadBar.editBox = whEditBox
+    whEditBox:SetHeight(20)
+    whEditBox:SetPoint("LEFT", whLabel, "RIGHT", 8, 0)
+    whEditBox:SetPoint("RIGHT", whHint, "LEFT", -10, 0)
+    whEditBox:SetFontObject("ChatFontNormal")
+    whEditBox:SetTextColor(0.45, 0.88, 1.0)
+    whEditBox:SetAutoFocus(false)
+    whEditBox:SetTextInsets(8, 8, 0, 0)
+    SetBackdrop(whEditBox, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 8, 2)
+    whEditBox:SetBackdropColor(0.03, 0.03, 0.025, 1)
+    whEditBox:SetBackdropBorderColor(0.42, 0.34, 0.18, 1)
 
-    questLinkBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(0.60, 0.46, 0.22, 1)
-        local card = FQL.linkHoverCard
-        if card and not card.isPinned then
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.2, function()
-                    if card and not card.isPinned and not card:IsMouseOver() and not self:IsMouseOver() then
-                        card.editBox:ClearFocus()
-                        card:Hide()
-                    end
-                end)
-            else
-                card.editBox:ClearFocus()
-                card:Hide()
-            end
+    whEditBox:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(0.95, 0.78, 0.28, 1)
+        if self.currentURL and self.currentURL ~= "" then
+            whHint:SetText("|cff55ff55Press Ctrl+C to copy|r")
+            self:SetFocus()
+            self:HighlightText()
         end
     end)
-
-    questLinkBtn:SetScript("OnClick", function(self, button)
-        PlayClickSound()
-        if not self.questID then return end
-        if IsModifiedClick and IsModifiedClick("CHATLINK") then
-            InsertOrOpenQuestChatLink(self.questID, self.title, self.level)
-            return
+    whEditBox:SetScript("OnLeave", function(self)
+        if not self.isPinnedFocus then
+            self:SetBackdropBorderColor(0.42, 0.34, 0.18, 1)
+            self:ClearFocus()
+            whHint:SetText("Hover or Click + Ctrl+C to copy")
+            whHint:SetTextColor(0.78, 0.74, 0.62)
         end
-        local card = FQL.linkHoverCard
-        if card and card:IsShown() then
-            card.isPinned = true
-            card.hint:SetText("|cffffff00Pinned!|r Press Ctrl+C")
-            card.hint:SetTextColor(1, 1, 0.4)
-        end
-        FQL:ShowCopyPopup(self.title, self.url or (GetQuestWebURL(self.questID)))
     end)
-    questLinkBtn:Hide()
+    whEditBox:SetScript("OnMouseDown", function(self)
+        self.isPinnedFocus = true
+    end)
+    whEditBox:SetScript("OnMouseUp", function(self)
+        if self.currentURL and self.currentURL ~= "" then
+            self:SetFocus()
+            self:HighlightText()
+            whHint:SetText("|cff55ff55Press Ctrl+C to copy|r")
+        end
+    end)
+    whEditBox:SetScript("OnEditFocusLost", function(self)
+        self.isPinnedFocus = false
+        self:SetBackdropBorderColor(0.42, 0.34, 0.18, 1)
+        self:HighlightText(0, 0)
+        whHint:SetText("Hover or Click + Ctrl+C to copy")
+        whHint:SetTextColor(0.78, 0.74, 0.62)
+    end)
+    whEditBox:SetScript("OnEscapePressed", function(self)
+        self.isPinnedFocus = false
+        self:ClearFocus()
+    end)
+    whEditBox:SetScript("OnEnterPressed", function(self)
+        self.isPinnedFocus = false
+        self:ClearFocus()
+    end)
+    whEditBox:SetScript("OnChar", function(self)
+        if self.currentURL then
+            self:SetText(self.currentURL)
+            self:HighlightText()
+        end
+    end)
+    whEditBox:SetScript("OnKeyDown", function(self, key)
+        if key == "C" and IsControlKeyDown and IsControlKeyDown() then
+            whHint:SetText("|cff00ff00Copied to clipboard!|r")
+        elseif key == "ESCAPE" then
+            self.isPinnedFocus = false
+            self:ClearFocus()
+        end
+    end)
 
     -- Clickable Quest Title (supports hover tooltip, click to copy URL, shift-click for chat link)
     local dTitleBtn = CreateFrame("Button", nil, detailContent)
     frame.detailTitleBtn = dTitleBtn
     dTitleBtn:SetAllPoints(dTitle)
     dTitleBtn:SetScript("OnEnter", function(self)
-        local qID = frame.questLinkBtn and frame.questLinkBtn.questID
+        local qID = FQL.selectedQuestID
         if not GameTooltip or not qID then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT", 0, -4)
-        GameTooltip:SetText(frame.questLinkBtn.title or "Quest", 1, 0.82, 0)
+        GameTooltip:SetText(FQL.selectedQuestTitle or "Quest", 1, 0.82, 0)
         GameTooltip:AddLine(GetQuestWebURL(qID), 0.3, 0.8, 1, false)
-        GameTooltip:AddLine("Click or hover [Wowhead] button to copy URL", 0.75, 0.75, 0.75)
-        GameTooltip:AddLine("Shift-Click to link quest in chat", 0.75, 0.75, 0.75)
+        GameTooltip:AddLine("Click to open copy popup | Shift-Click to link in chat", 0.75, 0.75, 0.75)
         GameTooltip:Show()
     end)
     dTitleBtn:SetScript("OnLeave", function()
         if GameTooltip then GameTooltip:Hide() end
     end)
     dTitleBtn:SetScript("OnClick", function(self, button)
-        local qID = frame.questLinkBtn and frame.questLinkBtn.questID
+        local qID = FQL.selectedQuestID
         if not qID then return end
         if IsModifiedClick and IsModifiedClick("CHATLINK") then
-            InsertOrOpenQuestChatLink(qID, frame.questLinkBtn.title, frame.questLinkBtn.level)
+            InsertOrOpenQuestChatLink(qID, FQL.selectedQuestTitle, FQL.selectedQuestLevel)
             return
         end
         PlayClickSound()
-        FQL:ShowCopyPopup(frame.questLinkBtn.title, frame.questLinkBtn.url or (GetQuestWebURL(qID)))
+        FQL:ShowCopyPopup(FQL.selectedQuestTitle, GetQuestWebURL(qID))
     end)
 
     local dObjSummary = detailContent:CreateFontString(nil, "OVERLAY", "QuestFont")
@@ -1144,12 +1290,18 @@ function FQL:CreateMainFrame()
         96,
         frame, "BOTTOMLEFT", 8, 5,
         function()
+            if IsShiftKeyDown and IsShiftKeyDown() then
+                if AbandonAllQuests then
+                    AbandonAllQuests()
+                end
+                return
+            end
             if FQL.selectedQuestID then
                 AbandonSelectedQuest(FQL.selectedQuestID, FQL.selectedQuestTitle)
             end
         end,
         ABANDON_QUEST or "Abandon Quest",
-        "Abandon the selected quest."
+        "Abandon the selected quest.\n|cffffd200Shift-Click:|r Abandon ALL quests in your Quest Log."
     )
 
     frame.shareBtn = CreateBottomButton(
@@ -1266,6 +1418,7 @@ function FQL:CreateMainFrame()
 
     self:SetupDefaultPanelHooks()
     self:RestorePosition()
+    self:UpdateWowheadBarLayout()
     if shupazForeverQuestLogDB and shupazForeverQuestLogDB.scale then
         self:SetScale(shupazForeverQuestLogDB.scale)
     end
@@ -1282,6 +1435,57 @@ function FQL:CreateMainFrame()
     end
 
     return frame
+end
+
+function FQL:UpdateWowheadBarLayout()
+    local frame = self.frame
+    if not frame or not frame.wowheadBar or not frame.leftPane or not frame.rightPane then return end
+
+    local pos = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.wowheadBarPosition) or "HIDE"
+    local bar = frame.wowheadBar
+    bar:ClearAllPoints()
+    frame.leftPane:ClearAllPoints()
+    frame.rightPane:ClearAllPoints()
+
+    if pos == "TOP" then
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -56)
+        bar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -56)
+        bar:Show()
+
+        frame.leftPane:SetPoint("TOPLEFT", 8, -85)
+        frame.leftPane:SetPoint("BOTTOMLEFT", 8, 30)
+        frame.rightPane:SetPoint("TOPLEFT", frame.leftPane, "TOPRIGHT", 6, 0)
+        frame.rightPane:SetPoint("BOTTOMRIGHT", -8, 30)
+    elseif pos == "HIDE" then
+        bar:Hide()
+
+        frame.leftPane:SetPoint("TOPLEFT", 8, -60)
+        frame.leftPane:SetPoint("BOTTOMLEFT", 8, 30)
+        frame.rightPane:SetPoint("TOPLEFT", frame.leftPane, "TOPRIGHT", 6, 0)
+        frame.rightPane:SetPoint("BOTTOMRIGHT", -8, 30)
+    else
+        bar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 30)
+        bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 30)
+        bar:Show()
+
+        frame.leftPane:SetPoint("TOPLEFT", 8, -60)
+        frame.leftPane:SetPoint("BOTTOMLEFT", 8, 59)
+        frame.rightPane:SetPoint("TOPLEFT", frame.leftPane, "TOPRIGHT", 6, 0)
+        frame.rightPane:SetPoint("BOTTOMRIGHT", -8, 59)
+    end
+end
+
+function FQL:SetWowheadBarPosition(pos)
+    if pos ~= "TOP" and pos ~= "BOTTOM" and pos ~= "HIDE" then
+        pos = "HIDE"
+    end
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.wowheadBarPosition = pos
+    end
+    self:UpdateWowheadBarLayout()
+    if self.optionsPanel and self.optionsPanel.RefreshControls then
+        self.optionsPanel:RefreshControls()
+    end
 end
 
 -- ============================================================
@@ -1364,8 +1568,9 @@ local function AcquireListRow(frame, index)
 
     row:SetScript("OnDoubleClick", function(self, button)
         if button == "LeftButton" and not self.isHeader and self.questEntry and self.questEntry.questID then
-            SetQuestSuperTracked(self.questEntry.questID)
-            FQL:Refresh()
+            PlayClickSound()
+            FQL:SelectQuest(self.questEntry.questID, self.questEntry.logIndex)
+            ShowQuestOnWorldMap(self.questEntry.questID)
         end
     end)
 
@@ -1391,7 +1596,7 @@ local function AcquireListRow(frame, index)
             end
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-Click: View Details | Shift-Click: Track / Link | Right-Click: Menu", 0.55, 0.55, 0.55, true)
+        GameTooltip:AddLine("Left-Click: View Details | Double-Click: Show Map | Shift-Click: Track / Link | Right-Click: Menu", 0.55, 0.55, 0.55, true)
         GameTooltip:Show()
     end)
 
@@ -1472,6 +1677,22 @@ function FQL:ToggleAllHeaders()
         wipe(collapsed)
     end
 
+    self:RefreshQuestList()
+end
+
+function FQL:SetAllHeadersCollapsed(shouldCollapse)
+    if not shupazForeverQuestLogCharDB then return end
+    shupazForeverQuestLogCharDB.collapsedHeaders = shupazForeverQuestLogCharDB.collapsedHeaders or {}
+    local collapsed = shupazForeverQuestLogCharDB.collapsedHeaders
+    wipe(collapsed)
+    if shouldCollapse then
+        local sections = self:BuildStructuredLog()
+        for _, sec in ipairs(sections) do
+            if sec.title then
+                collapsed[sec.title] = true
+            end
+        end
+    end
     self:RefreshQuestList()
 end
 
@@ -1708,13 +1929,19 @@ function FQL:RefreshQuestDetail()
     local qEntry = questID and self.allQuestsByID and self.allQuestsByID[questID]
 
     if not qEntry then
+        self.selectedQuestTitle = nil
+        self.selectedQuestLevel = nil
         frame.detailScroll:Hide()
         frame.noSelectionText:Show()
         frame.abandonBtn:Disable()
         frame.shareBtn:Disable()
         frame.trackBtn:Disable()
         frame.mapBtn:Disable()
-        if frame.questLinkBtn then frame.questLinkBtn:Hide() end
+        if frame.wowheadBar and frame.wowheadBar.editBox then
+            frame.wowheadBar.editBox.currentURL = ""
+            frame.wowheadBar.editBox:SetText("Select a quest to view its Wowhead URL")
+            frame.wowheadBar.editBox:SetTextColor(0.55, 0.50, 0.42)
+        end
         if self.linkHoverCard then
             self.linkHoverCard.editBox:ClearFocus()
             self.linkHoverCard:Hide()
@@ -1722,6 +1949,8 @@ function FQL:RefreshQuestDetail()
         return
     end
 
+    self.selectedQuestTitle = qEntry.title
+    self.selectedQuestLevel = qEntry.level
     frame.noSelectionText:Hide()
     frame.detailScroll:Show()
     frame.abandonBtn:Enable()
@@ -1760,23 +1989,20 @@ function FQL:RefreshQuestDetail()
         frame.specialItemBtn:Hide()
     end
 
-    -- Quest Link Button (Wowhead / Web link with hover-to-copy)
-    frame.questLinkBtn.questID = questID
-    frame.questLinkBtn.title = qEntry.title
-    frame.questLinkBtn.level = qEntry.level
+    -- Update Dedicated Wowhead URL Bar
     local questUrl = GetQuestWebURL(questID)
-    frame.questLinkBtn.url = questUrl
-
-    frame.questLinkBtn:ClearAllPoints()
-    if frame.specialItemBtn:IsShown() then
-        frame.questLinkBtn:SetPoint("TOPRIGHT", frame.specialItemBtn, "TOPLEFT", -6, 0)
-    else
-        frame.questLinkBtn:SetPoint("TOPRIGHT", frame.detailContent, "TOPRIGHT", -2, -2)
+    if frame.wowheadBar and frame.wowheadBar.editBox then
+        local eb = frame.wowheadBar.editBox
+        eb.currentURL = questUrl
+        eb:SetTextColor(0.45, 0.88, 1.0)
+        eb:SetText(questUrl)
+        if eb:HasFocus() then
+            eb:HighlightText()
+        end
     end
-    frame.questLinkBtn:Show()
 
     -- Title
-    local titleRightPad = (frame.specialItemBtn:IsShown() and 44 or 0) + (frame.questLinkBtn:GetWidth() + 6)
+    local titleRightPad = frame.specialItemBtn:IsShown() and 44 or 0
     frame.detailTitle:ClearAllPoints()
     frame.detailTitle:SetPoint("TOPLEFT", frame.detailContent, "TOPLEFT", 0, -y)
     frame.detailTitle:SetWidth(contentWidth - titleRightPad)
@@ -2003,7 +2229,10 @@ end
 
 function FQL:Refresh()
     if not self.frame or not self.frame:IsShown() then return end
+    if self._isRefreshing then return end
+    self._isRefreshing = true
     self:RefreshQuestList()
     self:RefreshQuestDetail()
+    self._isRefreshing = false
 end
 

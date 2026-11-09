@@ -1,19 +1,60 @@
 local ADDON_NAME, FQL = ...
 
-local SafeNum                = FQL.SafeNum
-local SafeStr                = FQL.SafeStr
-local CanChangeFrame         = FQL.CanChangeFrame
-local SetBackdrop            = FQL.SetBackdrop
-local PlayClickSound         = FQL.PlayClickSound
+local SafeNum                 = FQL.SafeNum
+local SafeStr                 = FQL.SafeStr
+local CanChangeFrame          = FQL.CanChangeFrame
+local SetBackdrop             = FQL.SetBackdrop
+local PlayClickSound          = FQL.PlayClickSound
 
-local ExpandAllNativeHeaders = FQL.ExpandAllNativeHeaders
-local GetNumLogEntries       = FQL.GetNumLogEntries
-local GetLogEntryInfo        = FQL.GetLogEntryInfo
-local IsQuestWatchedByID     = FQL.IsQuestWatchedByID
-local SetQuestWatchedByID    = FQL.SetQuestWatchedByID
+local ExpandAllNativeHeaders  = FQL.ExpandAllNativeHeaders
+local GetNumLogEntries        = FQL.GetNumLogEntries
+local GetLogEntryInfo         = FQL.GetLogEntryInfo
+local IsQuestWatchedByID      = FQL.IsQuestWatchedByID
+local SetQuestWatchedByID     = FQL.SetQuestWatchedByID
+local IsQuestCompleteOrFailed = FQL.IsQuestCompleteOrFailed
 
-local MIN_SCALE              = FQL.MIN_SCALE or 0.6
-local MAX_SCALE              = FQL.MAX_SCALE or 1.6
+local MIN_SCALE               = FQL.MIN_SCALE or 0.6
+local MAX_SCALE               = FQL.MAX_SCALE or 1.6
+
+-- ============================================================
+-- Private State Tables (Zero Custom Keys on Blizzard Tables)
+-- ============================================================
+
+local TState = setmetatable({}, { __mode = "k" })
+local BState = setmetatable({}, { __mode = "k" })
+local FState = setmetatable({}, { __mode = "k" })
+local WheelHooked = setmetatable({}, { __mode = "k" })
+local CustomZoneHeaders = setmetatable({}, { __mode = "k" })
+
+local function TS(tracker)
+    if not tracker then return {} end
+    local s = TState[tracker]
+    if not s then
+        s = {}
+        TState[tracker] = s
+    end
+    return s
+end
+
+local function BS(block)
+    if not block then return {} end
+    local s = BState[block]
+    if not s then
+        s = {}
+        BState[block] = s
+    end
+    return s
+end
+
+local function FS(fs)
+    if not fs then return {} end
+    local s = FState[fs]
+    if not s then
+        s = {}
+        FState[fs] = s
+    end
+    return s
+end
 
 -- ============================================================
 -- Objective Tracker Collapsible Zone Headers
@@ -104,6 +145,33 @@ function FQL:ToggleTrackerZone(zoneName)
     self:SetTrackerZoneCollapsed(zoneName, not isCol)
 end
 
+function FQL:SetAllTrackerZonesCollapsed(shouldCollapse)
+    shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
+    shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
+    local collapsed = shupazForeverQuestLogCharDB.collapsedTrackerZones
+    if not shouldCollapse then
+        wipe(collapsed)
+    else
+        local questToZone = self:GetQuestZoneLookup()
+        for _, data in pairs(questToZone) do
+            if data.zone then
+                collapsed[data.zone] = true
+            end
+        end
+        if _G.QuestObjectiveTracker and TState[_G.QuestObjectiveTracker] and TState[_G.QuestObjectiveTracker].activeZones then
+            for _, z in ipairs(TState[_G.QuestObjectiveTracker].activeZones) do
+                collapsed[z] = true
+            end
+        end
+        if _G.CampaignQuestObjectiveTracker and TState[_G.CampaignQuestObjectiveTracker] and TState[_G.CampaignQuestObjectiveTracker].activeZones then
+            for _, z in ipairs(TState[_G.CampaignQuestObjectiveTracker].activeZones) do
+                collapsed[z] = true
+            end
+        end
+    end
+    self:RefreshObjectiveTracker()
+end
+
 function FQL:ToggleAllTrackerZones(activeZones)
     shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
     shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
@@ -124,11 +192,11 @@ function FQL:ToggleAllTrackerZones(activeZones)
     if activeZones then
         AddZoneList(activeZones)
     else
-        if _G.QuestObjectiveTracker and _G.QuestObjectiveTracker._fqlActiveZones then
-            AddZoneList(_G.QuestObjectiveTracker._fqlActiveZones)
+        if _G.QuestObjectiveTracker and TState[_G.QuestObjectiveTracker] then
+            AddZoneList(TState[_G.QuestObjectiveTracker].activeZones)
         end
-        if _G.CampaignQuestObjectiveTracker and _G.CampaignQuestObjectiveTracker._fqlActiveZones then
-            AddZoneList(_G.CampaignQuestObjectiveTracker._fqlActiveZones)
+        if _G.CampaignQuestObjectiveTracker and TState[_G.CampaignQuestObjectiveTracker] then
+            AddZoneList(TState[_G.CampaignQuestObjectiveTracker].activeZones)
         end
         AddZoneList(self._lastTrackerZones)
     end
@@ -286,18 +354,18 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
 end
 
 local function AcquireTrackerZoneHeader(tracker, index)
-    tracker._fqlZoneHeaders = tracker._fqlZoneHeaders or {}
-    local hBtn = tracker._fqlZoneHeaders[index]
+    local ts = TS(tracker)
+    ts.zoneHeaders = ts.zoneHeaders or {}
+    local hBtn = ts.zoneHeaders[index]
     if hBtn then return hBtn end
 
     local parent = tracker.ContentsFrame or tracker
     hBtn = CreateFrame("Button", nil, parent)
-    hBtn._fqlZoneHeader = true
+    CustomZoneHeaders[hBtn] = true
     hBtn:SetHeight(TRACKER_ZONE_HEADER_HEIGHT)
     hBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     hBtn:SetHitRectInsets(-26, 0, 0, 0)
 
-    -- Subtle dark-gold header bar background
     local bg = hBtn:CreateTexture(nil, "BACKGROUND")
     hBtn.bg = bg
     bg:SetPoint("TOPLEFT", -2, 0)
@@ -305,7 +373,6 @@ local function AcquireTrackerZoneHeader(tracker, index)
     bg:SetTexture("Interface\\Buttons\\WHITE8X8")
     bg:SetColorTexture(0.11, 0.08, 0.035, 0.52)
 
-    -- Subtle bottom gold divider line
     local line = hBtn:CreateTexture(nil, "BORDER")
     hBtn.line = line
     line:SetPoint("BOTTOMLEFT", -2, 0)
@@ -314,7 +381,6 @@ local function AcquireTrackerZoneHeader(tracker, index)
     line:SetTexture("Interface\\Buttons\\WHITE8X8")
     line:SetColorTexture(0.76, 0.60, 0.22, 0.48)
 
-    -- Collapse / Expand [+] / [-] button in the POI column (to the left of the header bar)
     local iconWrap = CreateFrame("Frame", nil, hBtn)
     hBtn.iconWrap = iconWrap
     iconWrap:SetSize(16, 16)
@@ -330,13 +396,11 @@ local function AcquireTrackerZoneHeader(tracker, index)
     iconHighlight:SetTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
     iconHighlight:SetBlendMode("ADD")
 
-    -- Count badge on the right
     local countText = hBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hBtn.countText = countText
     countText:SetPoint("RIGHT", -4, 0)
     countText:SetJustifyH("RIGHT")
 
-    -- Zone title text aligned with quest titles
     local titleText = hBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hBtn.titleText = titleText
     titleText:SetPoint("LEFT", 2, 0)
@@ -356,7 +420,7 @@ local function AcquireTrackerZoneHeader(tracker, index)
             GameTooltip:AddLine("Left-Click: Collapse / Expand Zone", 0.65, 0.65, 0.65)
             GameTooltip:AddLine("Shift-Click: Collapse / Expand All Zones", 0.65, 0.65, 0.65)
             GameTooltip:AddLine("Right-Click: Zone Options", 0.65, 0.65, 0.65)
-            if tracker and (tracker._fqlMaxScrollIndex or 1) > 1 then
+            if tracker and (TS(tracker).maxScrollIndex or 1) > 1 then
                 GameTooltip:AddLine("Mouse Wheel: Scroll Tracked List", 0.55, 0.82, 1.0)
             end
             GameTooltip:Show()
@@ -397,21 +461,21 @@ local function AcquireTrackerZoneHeader(tracker, index)
         end
     end)
 
-    tracker._fqlZoneHeaders[index] = hBtn
+    ts.zoneHeaders[index] = hBtn
     return hBtn
 end
 
 local function HideAllTrackerZoneHeaders(tracker)
-    if not tracker or not tracker._fqlZoneHeaders then return end
-    for _, hBtn in ipairs(tracker._fqlZoneHeaders) do
+    local ts = TState[tracker]
+    if not ts or not ts.zoneHeaders then return end
+    for _, hBtn in ipairs(ts.zoneHeaders) do
         hBtn:Hide()
     end
 end
 
 local function IsRealTrackerBlock(block)
     if type(block) ~= "table" or not block.GetObjectType then return false end
-    if block._fqlZoneHeader then return false end
-    -- Exclude POIButtons which implement GetQuestID/SetQuestID and have no HeaderText/usedLines
+    if CustomZoneHeaders[block] then return false end
     if (block.GetQuestID or block.SetQuestID) and not block.HeaderText and not block.usedLines then
         return false
     end
@@ -422,11 +486,12 @@ local function IsRealTrackerBlock(block)
 end
 
 local function CaptureBlockNativeAnchors(block, contents)
+    local bs = BS(block)
     local h = SafeNum(block.height) or SafeNum(block:GetHeight())
     if h and h > 8 then
-        block._fqlHeight = h
+        bs.height = h
     end
-    if block._fqlNativeCaptured then return end
+    if bs.nativeCaptured then return end
     local numPts = block.GetNumPoints and block:GetNumPoints() or 0
     if numPts == 0 then return end
 
@@ -453,21 +518,17 @@ local function CaptureBlockNativeAnchors(block, contents)
         end
     end
 
-    block._fqlHorizPoints = horizPoints
-    block._fqlLeftOffset = leftOffset or 0
-    block._fqlRightOffset = rightOffset or 0
+    bs.horizPoints = horizPoints
+    bs.leftOffset = leftOffset or 0
+    bs.rightOffset = rightOffset or 0
     if topOffset and topOffset > 0 and topOffset < 30 then
-        block._fqlTopOffset = topOffset
+        bs.topOffset = topOffset
     end
     local w = SafeNum(block:GetWidth())
     if w and w > 80 then
-        block._fqlWidth = w
+        bs.width = w
     end
-    local h = SafeNum(block.height) or SafeNum(block:GetHeight())
-    if h and h > 8 then
-        block._fqlHeight = h
-    end
-    block._fqlNativeCaptured = true
+    bs.nativeCaptured = true
 end
 
 local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQuestID)
@@ -495,12 +556,12 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
 
     local function InspectCandidateBlock(block, keyQuestID, fromActiveTable)
         if not IsRealTrackerBlock(block) or seenBlocks[block] then return end
-        if not (fromActiveTable or block:IsShown() or block._fqlHiddenByZone or block.used) then return end
+        local bs = BS(block)
+        if not (fromActiveTable or block:IsShown() or bs.hiddenByZone or block.used) then return end
 
         local qid = ResolveBlockQuestID(block, keyQuestID)
         if not qid or qid <= 0 then return end
 
-        -- Ignore stale pooled blocks whose quests are no longer watched or in the log
         if not fromActiveTable and questToZone and not questToZone[qid] then
             return
         end
@@ -519,7 +580,6 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
         end
     end
 
-    -- 1. Walk tracker.firstBlock -> block.nextBlock linked list (11.0+ ObjectiveTrackerModuleMixin)
     if tracker.firstBlock then
         local curr = tracker.firstBlock
         local guard = 0
@@ -530,7 +590,6 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
         end
     end
 
-    -- 2. Check tracker.usedBlocks table
     if type(tracker.usedBlocks) == "table" then
         for _, templateBlocks in pairs(tracker.usedBlocks) do
             if type(templateBlocks) == "table" then
@@ -541,14 +600,12 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
         end
     end
 
-    -- 3. Also scan direct children of ContentsFrame
     if contents and contents.GetChildren then
         for _, child in ipairs({ contents:GetChildren() }) do
             InspectCandidateBlock(child, nil, false)
         end
     end
 
-    -- 4. Collect POI buttons & special item buttons associated with each questID
     local function AddAttachment(entry, frameObj)
         if not entry or not frameObj or frameObj == entry.block then return end
         for _, existing in ipairs(entry.attachments) do
@@ -569,7 +626,7 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
     local function ScanChildrenForAttachments(parentFrame)
         if not parentFrame or not parentFrame.GetChildren then return end
         for _, child in ipairs({ parentFrame:GetChildren() }) do
-            if not seenBlocks[child] and not child._fqlZoneHeader then
+            if not seenBlocks[child] and not CustomZoneHeaders[child] then
                 local cQuestID = SafeNum(child.questID)
                 if not cQuestID and type(child.GetQuestID) == "function" then
                     local ok, id = pcall(child.GetQuestID, child)
@@ -593,11 +650,13 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
 end
 
 function FQL:EnsureTrackerHeaderZoneButton(tracker)
-    if not tracker or not tracker.Header or tracker._fqlHeaderZoneBtn then return end
+    if not tracker or not tracker.Header then return end
+    local ts = TS(tracker)
+    if ts.headerZoneBtn then return end
     local header = tracker.Header
     local minBtn = header.MinimizeButton or header.FilterButton
     local btn = CreateFrame("Button", nil, header)
-    tracker._fqlHeaderZoneBtn = btn
+    ts.headerZoneBtn = btn
     btn:SetSize(16, 16)
     if minBtn then
         btn:SetPoint("RIGHT", minBtn, "LEFT", -6, 0)
@@ -634,14 +693,15 @@ local function ApplyFontToFontString(fs, fontPath)
     if not fs or type(fs.GetFont) ~= "function" or type(fs.SetFont) ~= "function" then return end
     local ok, curFont, curSize, curFlags = pcall(fs.GetFont, fs)
     if not ok then return end
-    if not fs._fqlOrigFont then
-        fs._fqlOrigFont = SafeStr(curFont) or (STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF")
-        fs._fqlOrigSize = SafeNum(curSize) or 12
-        fs._fqlOrigFlags = SafeStr(curFlags) or ""
+    local fst = FS(fs)
+    if not fst.origFont then
+        fst.origFont = SafeStr(curFont) or (STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF")
+        fst.origSize = SafeNum(curSize) or 12
+        fst.origFlags = SafeStr(curFlags) or ""
     end
-    local targetFont = fontPath or fs._fqlOrigFont
-    local size = SafeNum(curSize) or fs._fqlOrigSize or 12
-    local flags = SafeStr(curFlags) or fs._fqlOrigFlags or ""
+    local targetFont = fontPath or fst.origFont
+    local size = SafeNum(curSize) or fst.origSize or 12
+    local flags = SafeStr(curFlags) or fst.origFlags or ""
     if curFont ~= targetFont then
         pcall(fs.SetFont, fs, targetFont, size, flags)
     end
@@ -721,13 +781,14 @@ function FQL:ApplyTrackerStyle(tracker)
 
     if not tracker then return end
     local fontPath = self:GetTrackerFontPath()
+    local ts = TS(tracker)
 
     if tracker.Header and tracker.Header.Text then
         ApplyFontToFontString(tracker.Header.Text, fontPath)
     end
 
-    if tracker._fqlZoneHeaders then
-        for _, hBtn in ipairs(tracker._fqlZoneHeaders) do
+    if ts.zoneHeaders then
+        for _, hBtn in ipairs(ts.zoneHeaders) do
             ApplyFontToFontString(hBtn.titleText, fontPath)
             ApplyFontToFontString(hBtn.countText, fontPath)
         end
@@ -770,6 +831,7 @@ end
 local function GetMaxTrackerContentsHeight(tracker, contents)
     local container = _G.ObjectiveTrackerFrame
     local containerMax = nil
+    local ts = TS(tracker)
 
     if container then
         containerMax = SafeNum(container.editModeHeight)
@@ -784,8 +846,8 @@ local function GetMaxTrackerContentsHeight(tracker, contents)
         end
     end
 
-    if (not containerMax or containerMax <= 0 or containerMax >= 50000) and tracker._fqlNativeAvailableHeight then
-        containerMax = tracker._fqlNativeAvailableHeight
+    if (not containerMax or containerMax <= 0 or containerMax >= 50000) and ts.nativeAvailableHeight then
+        containerMax = ts.nativeAvailableHeight
     end
 
     if not containerMax or containerMax <= 0 or containerMax >= 50000 then
@@ -801,11 +863,10 @@ local function GetMaxTrackerContentsHeight(tracker, contents)
     end
 
     local maxH = containerMax - usedAbove
-    if tracker._fqlNativeAvailableHeight and tracker._fqlNativeAvailableHeight > 60 and tracker._fqlNativeAvailableHeight < maxH then
-        maxH = tracker._fqlNativeAvailableHeight
+    if ts.nativeAvailableHeight and ts.nativeAvailableHeight > 60 and ts.nativeAvailableHeight < maxH then
+        maxH = ts.nativeAvailableHeight
     end
 
-    -- Also ensure the list never overflows past the bottom of the screen (leave a 100px bottom margin)
     if myTop and myTop > 180 then
         local screenLimit = myTop - 100
         if screenLimit < maxH then
@@ -819,19 +880,21 @@ end
 
 function FQL:SetTrackerScrollIndex(tracker, newIndex)
     if not tracker then return end
-    local maxIdx = tracker._fqlMaxScrollIndex or 1
+    local ts = TS(tracker)
+    local maxIdx = ts.maxScrollIndex or 1
     local clamped = math.max(1, math.min(maxIdx, math.floor((newIndex or 1) + 0.5)))
-    if clamped ~= (tracker._fqlScrollIndex or 1) then
-        tracker._fqlScrollIndex = clamped
+    if clamped ~= (ts.scrollIndex or 1) then
+        ts.scrollIndex = clamped
         self:ApplyTrackerZoneLayout(tracker)
     end
 end
 
 function FQL:ScrollTrackerByDelta(tracker, delta)
     if not tracker then return end
-    local maxIdx = tracker._fqlMaxScrollIndex or 1
+    local ts = TS(tracker)
+    local maxIdx = ts.maxScrollIndex or 1
     if maxIdx <= 1 then return end
-    local cur = tracker._fqlScrollIndex or 1
+    local cur = ts.scrollIndex or 1
     local step = (IsShiftKeyDown and IsShiftKeyDown()) and 3 or 1
     local nextIdx
     if (delta or 0) > 0 then
@@ -840,15 +903,14 @@ function FQL:ScrollTrackerByDelta(tracker, delta)
         nextIdx = math.min(maxIdx, cur + step)
     end
     if nextIdx ~= cur then
-        tracker._fqlScrollIndex = nextIdx
+        ts.scrollIndex = nextIdx
         self:ApplyTrackerZoneLayout(tracker)
     end
 end
 
 local function AttachTrackerMouseWheel(frameObj, tracker)
-    if not frameObj or frameObj._fqlMouseWheelHooked or not tracker then return end
-    frameObj._fqlMouseWheelHooked = true
-    frameObj._fqlWheelTracker = tracker
+    if not frameObj or WheelHooked[frameObj] or not tracker then return end
+    WheelHooked[frameObj] = tracker
     pcall(function()
         if frameObj.EnableMouseWheel then
             frameObj:EnableMouseWheel(true)
@@ -856,13 +918,13 @@ local function AttachTrackerMouseWheel(frameObj, tracker)
         if frameObj.GetScript and frameObj:GetScript("OnMouseWheel") then
             frameObj:HookScript("OnMouseWheel", function(self, delta)
                 if FQL and FQL.ScrollTrackerByDelta then
-                    FQL:ScrollTrackerByDelta(self._fqlWheelTracker or tracker, delta)
+                    FQL:ScrollTrackerByDelta(WheelHooked[self] or tracker, delta)
                 end
             end)
         elseif frameObj.SetScript then
             frameObj:SetScript("OnMouseWheel", function(self, delta)
                 if FQL and FQL.ScrollTrackerByDelta then
-                    FQL:ScrollTrackerByDelta(self._fqlWheelTracker or tracker, delta)
+                    FQL:ScrollTrackerByDelta(WheelHooked[self] or tracker, delta)
                 end
             end)
         end
@@ -871,12 +933,13 @@ end
 
 local function EnsureTrackerScrollBar(tracker, contents)
     if not tracker or not contents then return nil end
-    if tracker._fqlScrollBar then
-        return tracker._fqlScrollBar
+    local ts = TS(tracker)
+    if ts.scrollBar then
+        return ts.scrollBar
     end
 
     local sb = CreateFrame("Frame", nil, contents)
-    tracker._fqlScrollBar = sb
+    ts.scrollBar = sb
     sb:SetWidth(6)
     sb:SetPoint("TOPRIGHT", contents, "TOPRIGHT", -1, -6)
     sb:SetFrameLevel((contents:GetFrameLevel() or 5) + 12)
@@ -888,7 +951,6 @@ local function EnsureTrackerScrollBar(tracker, contents)
         end
     end)
 
-    -- Up Arrow Button
     local upBtn = CreateFrame("Button", nil, sb)
     sb.upBtn = upBtn
     upBtn:SetSize(6, 10)
@@ -913,7 +975,6 @@ local function EnsureTrackerScrollBar(tracker, contents)
         FQL:ScrollTrackerByDelta(tracker, delta)
     end)
 
-    -- Down Arrow Button
     local downBtn = CreateFrame("Button", nil, sb)
     sb.downBtn = downBtn
     downBtn:SetSize(6, 10)
@@ -938,7 +999,6 @@ local function EnsureTrackerScrollBar(tracker, contents)
         FQL:ScrollTrackerByDelta(tracker, delta)
     end)
 
-    -- Track between Up and Down buttons
     local track = CreateFrame("Button", nil, sb)
     sb.track = track
     track:SetPoint("TOPLEFT", upBtn, "BOTTOMLEFT", 0, -2)
@@ -960,7 +1020,6 @@ local function EnsureTrackerScrollBar(tracker, contents)
     trackBorderR:SetPoint("BOTTOMRIGHT", 0, 0)
     trackBorderR:SetColorTexture(0.50, 0.40, 0.16, 0.42)
 
-    -- Draggable Thumb
     local thumb = CreateFrame("Button", nil, track)
     sb.thumb = thumb
     thumb:SetWidth(4)
@@ -976,10 +1035,10 @@ local function EnsureTrackerScrollBar(tracker, contents)
         if GameTooltip and (not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showTooltips ~= false) then
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             GameTooltip:SetText("Objective Tracker Scroll", 1, 0.82, 0)
-            local cur = tracker._fqlScrollIndex or 1
-            local maxIdx = tracker._fqlMaxScrollIndex or 1
-            local totalQ = tracker._fqlTotalTrackedQuests or 0
-            local shownQ = tracker._fqlShownTrackedQuests or 0
+            local cur = ts.scrollIndex or 1
+            local maxIdx = ts.maxScrollIndex or 1
+            local totalQ = ts.totalTrackedQuests or 0
+            local shownQ = ts.shownTrackedQuests or 0
             GameTooltip:AddLine(string.format("Showing %d of %d tracked quests (Position %d/%d)", shownQ, totalQ, cur, maxIdx), 0.9, 0.9, 0.9)
             GameTooltip:AddLine("Drag thumb or use Mouse Wheel to scroll", 0.65, 0.85, 0.65)
             GameTooltip:AddLine("Hold Shift + Mouse Wheel to scroll faster", 0.65, 0.65, 0.65)
@@ -1023,7 +1082,7 @@ local function EnsureTrackerScrollBar(tracker, contents)
                 StopThumbDrag(self)
                 return
             end
-            local maxIdx = tracker._fqlMaxScrollIndex or 1
+            local maxIdx = ts.maxScrollIndex or 1
             local maxOff = self._dragMaxOffset or sb._maxThumbOffset or 0
             if maxIdx <= 1 or maxOff <= 0 then return end
             local effScale = track:GetEffectiveScale() or 1
@@ -1039,7 +1098,6 @@ local function EnsureTrackerScrollBar(tracker, contents)
     thumb:SetScript("OnDragStop", StopThumbDrag)
     thumb:SetScript("OnHide", StopThumbDrag)
 
-    -- Clicking the track above/below the thumb pages up/down
     track:EnableMouseWheel(true)
     track:SetScript("OnMouseWheel", function(_, delta)
         FQL:ScrollTrackerByDelta(tracker, delta)
@@ -1052,9 +1110,9 @@ local function EnsureTrackerScrollBar(tracker, contents)
         local thumbBot = thumb:GetBottom()
         PlayClickSound()
         if thumbTop and cursorY > thumbTop then
-            FQL:SetTrackerScrollIndex(tracker, (tracker._fqlScrollIndex or 1) - 3)
+            FQL:SetTrackerScrollIndex(tracker, (ts.scrollIndex or 1) - 3)
         elseif thumbBot and cursorY < thumbBot then
-            FQL:SetTrackerScrollIndex(tracker, (tracker._fqlScrollIndex or 1) + 3)
+            FQL:SetTrackerScrollIndex(tracker, (ts.scrollIndex or 1) + 3)
         end
     end)
 
@@ -1105,6 +1163,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     if not tracker or self._inTrackerLayout then return end
     local contents = tracker.ContentsFrame or tracker
     if not contents then return end
+    local ts = TS(tracker)
 
     self:ApplyTrackerStyle(tracker)
     AttachTrackerMouseWheel(contents, tracker)
@@ -1113,7 +1172,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         if not entry then return end
         local b = entry.block
         if b then
-            b._fqlHiddenByZone = true
+            BS(b).hiddenByZone = true
             if CanChangeFrame(b) then
                 b:ClearAllPoints()
                 b:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, 0)
@@ -1123,7 +1182,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
             end
         end
         for _, att in ipairs(entry.attachments or {}) do
-            att._fqlHiddenByZone = true
+            BS(att).hiddenByZone = true
             if CanChangeFrame(att) then
                 att:Hide()
             end
@@ -1132,12 +1191,12 @@ function FQL:ApplyTrackerZoneLayout(tracker)
 
     if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
         HideAllTrackerZoneHeaders(tracker)
-        if tracker._fqlHeaderZoneBtn then tracker._fqlHeaderZoneBtn:Hide() end
-        if tracker._fqlScrollBar then tracker._fqlScrollBar:Hide() end
+        if ts.headerZoneBtn then ts.headerZoneBtn:Hide() end
+        if ts.scrollBar then ts.scrollBar:Hide() end
         if contents.GetChildren then
             for _, child in ipairs({ contents:GetChildren() }) do
-                if child._fqlHiddenByZone then
-                    child._fqlHiddenByZone = nil
+                if BState[child] and BState[child].hiddenByZone then
+                    BState[child].hiddenByZone = nil
                     if CanChangeFrame(child) then child:Show() end
                 end
             end
@@ -1145,11 +1204,10 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         return
     end
 
-    -- If the entire Quests module or ObjectiveTrackerFrame is collapsed, hide zone headers
     if (tracker.IsCollapsed and tracker:IsCollapsed()) or not contents:IsShown() then
         HideAllTrackerZoneHeaders(tracker)
-        if tracker._fqlHeaderZoneBtn then tracker._fqlHeaderZoneBtn:Hide() end
-        if tracker._fqlScrollBar then tracker._fqlScrollBar:Hide() end
+        if ts.headerZoneBtn then ts.headerZoneBtn:Hide() end
+        if ts.scrollBar then ts.scrollBar:Hide() end
         return
     end
 
@@ -1167,39 +1225,37 @@ function FQL:ApplyTrackerZoneLayout(tracker)
 
     if #questBlocks == 0 then
         HideAllTrackerZoneHeaders(tracker)
-        if tracker._fqlHeaderZoneBtn then tracker._fqlHeaderZoneBtn:Hide() end
-        if tracker._fqlScrollBar then tracker._fqlScrollBar:Hide() end
+        if ts.headerZoneBtn then ts.headerZoneBtn:Hide() end
+        if ts.scrollBar then ts.scrollBar:Hide() end
         self._inTrackerLayout = false
         return
     end
 
     self:EnsureTrackerHeaderZoneButton(tracker)
-    if tracker._fqlHeaderZoneBtn then
-        tracker._fqlHeaderZoneBtn:Show()
+    if ts.headerZoneBtn then
+        ts.headerZoneBtn:Show()
     end
 
-    -- Determine horizontal offsets and width from captured block metrics
     local defaultLeftOffset = 0
     local defaultRightOffset = 0
     local defaultWidth = SafeNum(contents:GetWidth()) or 235
     local startY = 10
 
     for _, entry in ipairs(questBlocks) do
-        local b = entry.block
-        if b._fqlLeftOffset ~= nil then
-            defaultLeftOffset = b._fqlLeftOffset
-            defaultRightOffset = b._fqlRightOffset or 0
-            if b._fqlWidth and b._fqlWidth > 80 then
-                defaultWidth = b._fqlWidth
+        local bs = BS(entry.block)
+        if bs.leftOffset ~= nil then
+            defaultLeftOffset = bs.leftOffset
+            defaultRightOffset = bs.rightOffset or 0
+            if bs.width and bs.width > 80 then
+                defaultWidth = bs.width
             end
-            if b._fqlTopOffset then
-                startY = math.max(10, b._fqlTopOffset)
+            if bs.topOffset then
+                startY = math.max(10, bs.topOffset)
             end
             break
         end
     end
 
-    -- Group active quest blocks by Zone
     local groupsByName = {}
     local orderedGroups = {}
     local currentPlayerZone = (GetRealZoneText and SafeStr(GetRealZoneText())) or (GetZoneText and SafeStr(GetZoneText())) or nil
@@ -1250,7 +1306,6 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     local activeZoneNames = {}
     local anyZoneExpanded = false
 
-    -- Build the flat ordered list of renderable items (Zone Headers + expanded Quest Blocks)
     local renderItems = {}
     for _, grp in ipairs(orderedGroups) do
         activeZoneNames[#activeZoneNames + 1] = grp.zoneName
@@ -1273,7 +1328,8 @@ function FQL:ApplyTrackerZoneLayout(tracker)
             anyZoneExpanded = true
             for bIdx, entry in ipairs(grp.entries) do
                 local b = entry.block
-                local bHeight = SafeNum(b.height) or b._fqlHeight or SafeNum(b:GetHeight()) or 36
+                local bs = BS(b)
+                local bHeight = SafeNum(b.height) or bs.height or SafeNum(b:GetHeight()) or 36
                 renderItems[#renderItems + 1] = {
                     type = "QUEST",
                     grp = grp,
@@ -1285,7 +1341,6 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         end
     end
 
-    -- Helper to compute whether rendering from startIdx..#renderItems fits in maxContentsHeight
     local function ComputeTailHeight(startIdx)
         local h = startY
         local hasPrev = (#topBanners > 0)
@@ -1323,14 +1378,13 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         end
     end
 
-    tracker._fqlMaxScrollIndex = maxScrollIndex
-    local scrollIndex = math.max(1, math.min(maxScrollIndex, tracker._fqlScrollIndex or 1))
-    tracker._fqlScrollIndex = scrollIndex
+    ts.maxScrollIndex = maxScrollIndex
+    local scrollIndex = math.max(1, math.min(maxScrollIndex, ts.scrollIndex or 1))
+    ts.scrollIndex = scrollIndex
 
     local scrollbarPad = (maxScrollIndex > 1) and 9 or 0
     local effectiveRightOffset = defaultRightOffset - scrollbarPad
 
-    -- Hide any quest blocks above scrollIndex
     for i = 1, scrollIndex - 1 do
         local it = renderItems[i]
         if it and it.type == "QUEST" then
@@ -1401,7 +1455,6 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         return hBtn
     end
 
-    -- If scrollIndex starts on a QUEST item, pin its Zone Header at the top first
     local firstVisibleItem = renderItems[scrollIndex]
     if firstVisibleItem and firstVisibleItem.type == "QUEST" then
         RenderZoneHeader(firstVisibleItem.grp, true)
@@ -1427,6 +1480,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         elseif it.type == "QUEST" then
             local entry = it.entry
             local b = entry.block
+            local bs = BS(b)
             local prevIsHeader = (i == scrollIndex) or (renderItems[i - 1] and renderItems[i - 1].type == "HEADER")
             local gap = prevIsHeader and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_BLOCK_GAP
             local bHeight = it.height
@@ -1436,15 +1490,15 @@ function FQL:ApplyTrackerZoneLayout(tracker)
                 overflowReached = true
                 HideTrackerQuestEntry(entry)
             else
-                b._fqlHiddenByZone = nil
-                local bWidth = b._fqlWidth or defaultWidth
-                local bLeft = SafeNum(b.offsetX) or b._fqlLeftOffset or defaultLeftOffset
+                bs.hiddenByZone = nil
+                local bWidth = bs.width or defaultWidth
+                local bLeft = SafeNum(b.offsetX) or bs.leftOffset or defaultLeftOffset
 
                 if CanChangeFrame(b) then
                     b:ClearAllPoints()
                     b:SetPoint("TOP", prevAnchorFrame, "BOTTOM", 0, -gap)
-                    if b._fqlHorizPoints and #b._fqlHorizPoints > 0 and scrollbarPad == 0 then
-                        for _, hp in ipairs(b._fqlHorizPoints) do
+                    if bs.horizPoints and #bs.horizPoints > 0 and scrollbarPad == 0 then
+                        for _, hp in ipairs(bs.horizPoints) do
                             b:SetPoint(hp.p, hp.rel or contents, hp.rp, hp.x, hp.y)
                         end
                     else
@@ -1463,7 +1517,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
                 end
 
                 for _, att in ipairs(entry.attachments) do
-                    att._fqlHiddenByZone = nil
+                    BS(att).hiddenByZone = nil
                     if CanChangeFrame(att) then
                         att:Show()
                     end
@@ -1477,23 +1531,22 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         end
     end
 
-    for i = headerIdx + 1, #(tracker._fqlZoneHeaders or {}) do
-        tracker._fqlZoneHeaders[i]:Hide()
+    for i = headerIdx + 1, #(ts.zoneHeaders or {}) do
+        ts.zoneHeaders[i]:Hide()
     end
 
-    if tracker._fqlHeaderZoneBtn and tracker._fqlHeaderZoneBtn.icon then
-        tracker._fqlHeaderZoneBtn.icon:SetTexture(anyZoneExpanded and "Interface\\Buttons\\UI-MinusButton-Up" or "Interface\\Buttons\\UI-PlusButton-Up")
+    if ts.headerZoneBtn and ts.headerZoneBtn.icon then
+        ts.headerZoneBtn.icon:SetTexture(anyZoneExpanded and "Interface\\Buttons\\UI-MinusButton-Up" or "Interface\\Buttons\\UI-PlusButton-Up")
     end
 
-    tracker._fqlActiveZones = activeZoneNames
-    tracker._fqlTotalTrackedQuests = #questBlocks
-    tracker._fqlShownTrackedQuests = shownTrackedQuests
+    ts.activeZones = activeZoneNames
+    ts.totalTrackedQuests = #questBlocks
+    ts.shownTrackedQuests = shownTrackedQuests
     if #activeZoneNames > 0 then
         self._lastTrackerZones = activeZoneNames
     end
 
     local finalHeight = math.min(maxContentsHeight, math.max(24, estimatedHeight + 6))
-    tracker.contentsHeight = finalHeight
     if CanChangeFrame(contents) then
         if contents.SetClipsChildren then
             pcall(contents.SetClipsChildren, contents, false)
@@ -1513,78 +1566,46 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     self._inTrackerLayout = false
 end
 
-local function ForceUnlimitedTrackerHeight(self)
-    local cur = SafeNum(self.availableHeight)
-    if cur and cur > 40 and cur < 50000 then
-        self._fqlNativeAvailableHeight = cur
+local function HandleTrackerQuestClick(block, mouseButton)
+    if mouseButton == "LeftButton" and not (IsModifiedClick and IsModifiedClick()) then
+        local qid = block and (block.id or block.questID)
+        qid = SafeNum(qid)
+        if qid and qid > 0 then
+            if WorldMapFrame and WorldMapFrame:IsShown() and CanChangeFrame(WorldMapFrame) and HideUIPanel then
+                pcall(HideUIPanel, WorldMapFrame)
+            end
+            if FQL and FQL.OpenToQuest then
+                FQL:OpenToQuest(qid)
+            end
+        end
     end
-    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.trackerByZone ~= false then
-        self.availableHeight = 100000
-    end
-end
-
-local function NeedsFullHeightRetry(tracker)
-    if not tracker then return false end
-    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then return false end
-    if tracker.hasSkippedBlocks then return true end
-    local avail = SafeNum(tracker.availableHeight)
-    if avail and avail < 50000 then return true end
-    return false
 end
 
 local function HookSingleTrackerModule(tracker)
-    if not tracker or tracker._fqlTrackerHooked then return end
-    tracker._fqlTrackerHooked = true
+    if not tracker then return end
+    local ts = TS(tracker)
+    if ts.trackerHooked then return end
+    ts.trackerHooked = true
 
     if tracker.BeginLayout then
         hooksecurefunc(tracker, "BeginLayout", function(self)
-            self._fqlOrigAvailableHeight = self.availableHeight
-            ForceUnlimitedTrackerHeight(self)
+            local cur = SafeNum(self.availableHeight)
+            if cur and cur > 40 and cur < 50000 then
+                TS(self).nativeAvailableHeight = cur
+            end
             local cFrame = self.ContentsFrame or self
             if cFrame and cFrame.GetChildren then
                 for _, child in ipairs({ cFrame:GetChildren() }) do
-                    if child._fqlHiddenByZone then
-                        child._fqlHiddenByZone = nil
+                    if BState[child] and BState[child].hiddenByZone then
+                        BState[child].hiddenByZone = nil
                     end
                 end
             end
         end)
     end
 
-    -- In ObjectiveTrackerModuleMixin:Update(availableHeight, dirtyUpdate),
-    -- Blizzard sets `self.availableHeight = availableHeight` AFTER `self:BeginLayout()`.
-    -- Hook all pre-block-fit methods inside `LayoutContents()` so `self.availableHeight`
-    -- is always restored to 100000 before `CanFitHeader()` / `CanFitBlock()` runs,
-    -- preventing the tracker from truncating quests after ~2 zones.
-    local preFitMethods = {
-        "MarkBlocksUnused",
-        "AddAutoQuestObjectives",
-        "EnumQuestWatchData",
-        "ShouldDisplayQuest",
-        "UpdateSingle",
-        "GetBlock",
-        "SetBlockHeader",
-        "AddHeader",
-        "AnchorBlock",
-        "AddBlock",
-    }
-    for _, mName in ipairs(preFitMethods) do
-        if type(tracker[mName]) == "function" then
-            hooksecurefunc(tracker, mName, ForceUnlimitedTrackerHeight)
-        end
-    end
-
     if tracker.EndLayout then
         hooksecurefunc(tracker, "EndLayout", function(self)
-            -- If Blizzard still skipped any blocks due to height budget, immediately retry with 100000 height
-            if NeedsFullHeightRetry(self) then
-                if not self._fqlRetryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and self.Update then
-                    self._fqlRetryingFullHeight = true
-                    pcall(self.Update, self, 100000, false)
-                    self._fqlRetryingFullHeight = false
-                    return
-                end
-            end
             FQL:ApplyTrackerZoneLayout(self)
         end)
     elseif tracker.LayoutContents then
@@ -1594,13 +1615,23 @@ local function HookSingleTrackerModule(tracker)
     end
 
     if tracker.Update then
-        hooksecurefunc(tracker, "Update", function(self, availableHeight, dirtyUpdate)
-            if dirtyUpdate and not self._fqlRetryingFullHeight and not (InCombatLockdown and InCombatLockdown()) then
+        hooksecurefunc(tracker, "Update", function(self, _, dirtyUpdate)
+            if dirtyUpdate and not (InCombatLockdown and InCombatLockdown()) then
                 FQL:ApplyTrackerZoneLayout(self)
             end
         end)
     end
+
+    if type(tracker.OnBlockHeaderClick) == "function" and not ts.headerClickHooked then
+        ts.headerClickHooked = true
+        hooksecurefunc(tracker, "OnBlockHeaderClick", function(_, block, mouseButton)
+            HandleTrackerQuestClick(block, mouseButton)
+        end)
+    end
 end
+
+local legacyClickHooked = false
+local containerHooked = false
 
 local function SetupObjectiveTrackerHooks()
     if _G.QuestObjectiveTracker then
@@ -1609,34 +1640,31 @@ local function SetupObjectiveTrackerHooks()
     if _G.CampaignQuestObjectiveTracker then
         HookSingleTrackerModule(_G.CampaignQuestObjectiveTracker)
     end
-    if _G.ObjectiveTrackerFrame and not _G.ObjectiveTrackerFrame._fqlContainerHooked then
-        _G.ObjectiveTrackerFrame._fqlContainerHooked = true
+    if type(_G.ObjectiveTracker_OnBlockHeaderClick) == "function" and not legacyClickHooked then
+        legacyClickHooked = true
+        hooksecurefunc("ObjectiveTracker_OnBlockHeaderClick", function(block, mouseButton)
+            HandleTrackerQuestClick(block, mouseButton)
+        end)
+    end
+    if _G.ObjectiveTrackerFrame and not containerHooked then
+        containerHooked = true
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
                 if _G.QuestObjectiveTracker then
-                    if NeedsFullHeightRetry(_G.QuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.QuestObjectiveTracker.Update then
-                        pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
-                    else
-                        FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
-                    end
+                    FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
                 end
                 if _G.CampaignQuestObjectiveTracker then
-                    if NeedsFullHeightRetry(_G.CampaignQuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.CampaignQuestObjectiveTracker.Update then
-                        pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
-                    else
-                        FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
-                    end
+                    FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
                 end
             end)
         end
     end
 end
 
-function FQL:RefreshObjectiveTracker(forceFullRebuild)
+function FQL:RefreshObjectiveTracker()
     SetupObjectiveTrackerHooks()
     local inCombat = (InCombatLockdown and InCombatLockdown())
     if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
-        -- Hide custom zone headers first, then ask native tracker to re-layout blocks
         if _G.QuestObjectiveTracker then
             self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
             if not inCombat and _G.QuestObjectiveTracker.Update then
@@ -1655,45 +1683,16 @@ function FQL:RefreshObjectiveTracker(forceFullRebuild)
         return
     end
 
-    if not inCombat then
-        if _G.QuestObjectiveTracker then
-            _G.QuestObjectiveTracker.availableHeight = 100000
-            if _G.QuestObjectiveTracker.MarkDirty then
-                pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
-            end
-            if _G.QuestObjectiveTracker.Update then
-                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
-            end
-        end
-        if _G.CampaignQuestObjectiveTracker then
-            _G.CampaignQuestObjectiveTracker.availableHeight = 100000
-            if _G.CampaignQuestObjectiveTracker.MarkDirty then
-                pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
-            end
-            if _G.CampaignQuestObjectiveTracker.Update then
-                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
-            end
-        end
-    else
-        self._needsTrackerCombatRefresh = true
-    end
-
     if _G.QuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
     end
     if _G.CampaignQuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
     end
-    if not inCombat then
-        if _G.ObjectiveTrackerFrame and _G.ObjectiveTrackerFrame.UpdateHeight then
-            pcall(_G.ObjectiveTrackerFrame.UpdateHeight, _G.ObjectiveTrackerFrame)
-        end
-    else
+    if inCombat then
         self._needsTrackerCombatRefresh = true
     end
 end
-
-
 
 -- ============================================================
 -- Export Tracker Functions to FQL Namespace

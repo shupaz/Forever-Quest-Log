@@ -22,9 +22,11 @@
 - **Dual-Pane Layout**:
   - **Left Pane**: Collapsible zone headers with quest counts, colored difficulty levels (`[Level] Quest Title`), and completion statuses.
   - **Right Pane**: Rich quest descriptions, objectives, material requirements, XP, gold, and reward item previews.
-- **Track All / Untrack All**: One-click header button that dynamically tracks all active quests or clears all tracking.
-- **Wowhead Quest Link Integration**: Hover over the `[Wowhead]` badge next to any quest title for a quick copy card, or click to open an instant copy dialog linking directly to `wowhead.com/forever/quest=<id>`.
-- **Full ESC Key Support**: Easily close the window with the `Escape` key just like native Blizzard panels.
+- **Track All / Untrack All**: One-click button that dynamically tracks all active quests or clears all tracking.
+- **Double-Click to Show Map**: Double-click any quest in the list to open the small (windowed) World Map directly to that quest's zone side-by-side with the Quest Log.
+- **Shift-Click Abandon All**: Hold `Shift` and click **Abandon** to clear all quests in your Quest Log (with confirmation).
+- **Wowhead Quest Link Integration**: Optional dockable Wowhead URL bar (**Top | Bottom | Hidden**, default **Hidden**), plus clickable quest title and right-click context menu linking directly to `wowhead.com/forever/quest=<id>`.
+- **Full ESC Key & UIPanel Support**: Closes with `Escape`, docks side-by-side with narrow Blizzard panels (`CharacterFrame`, `GossipFrame`, `QuestFrame`, small `WorldMapFrame`), and auto-closes when full-screen panels open.
 - **Quick Action Bar**: Dedicated buttons for **Track All**, **Abandon Quest**, **Share Quest**, and **Show on Map**.
 - **Right-Click Context Menu**: Right-click any quest to track/untrack, super-track (map arrow), paste into chat, view Wowhead URL, share, or abandon.
 
@@ -42,7 +44,7 @@
 ---
 
 ### 🎨 Customization & Modern Integration
-- **Custom Fonts**: Choose from 10 built-in classic fonts (Friz Quadrata, Arial Narrow, Morpheus, Skurri, 2002, Nimrod, MoK, and more) plus full support for any font registered via **LibSharedMedia-3.0**.
+- **Custom Fonts**: Dynamically discovers all fonts active in your WoW client (`GetFonts()`) plus any fonts registered via **LibSharedMedia-3.0**, with mousewheel scrolling support.
 - **Independent Scaling**: Configure Quest Log scale and Objective Tracker scale separately (60% to 160%).
 - **World Map Decoupling**: Completely suppresses the embedded World Map quest panel and redirects the Micro Menu Quest button directly to the standalone Quest Log.
 - **Minimap Addon Compartment**: Left-click to toggle the Quest Log, right-click to instantly open settings.
@@ -111,15 +113,15 @@ Forever-Quest-Log/
 │   └── screenshot_05.png
 │
 ├── src/
-│   ├── Init.lua            # Global namespace, DB defaults, event dispatcher & slash commands (/fql)
-│   ├── Utils.lua           # Helpers, fonts, Quest API wrappers, link helpers & action utilities
-│   ├── Hooks.lua           # World Map quest suppression, CVars, keybindings & menu hooks
-│   ├── QuestLog.lua        # Dual-pane Quest Log window, headers, detail pane, Wowhead card & action buttons
+│   ├── Utils.lua           # Global namespace, DB defaults, helpers, dynamic fonts & Quest API wrappers
+│   ├── Hooks.lua           # World Map quest suppression, CVars, keybindings & Micro Menu redirection
+│   ├── QuestLog.lua        # Dual-pane Quest Log window, UIPanel placement, Wowhead bar & action buttons
 │   ├── Tracker.lua         # Blizzard Objective Tracker zone grouping, collapsible headers & custom scrollbar
-│   └── Options.lua         # Settings panel in Game Options > AddOns, sliders, checkboxes, font dropdown
+│   ├── Options.lua         # Settings panel in Game Options > AddOns, sliders, checkboxes & font dropdown
+│   └── Init.lua            # Public API, Addon Compartment callbacks, event dispatcher & slash commands (/fql)
 │
-├── Bindings.xml            # Keybinding definitions
 ├── shupaz_ForeverQuestLog.toc # Addon manifest loading modules in strict dependency order
+├── change-log.md           # Version release history
 ├── .pkgmeta                # BigWigs Packager configuration
 ├── LICENSE                 # MIT License
 └── README.md               # Documentation
@@ -137,15 +139,14 @@ Forever-Quest-Log/
 3. Ensure the folder structure appears as:
    ```text
    Interface\AddOns\shupaz_ForeverQuestLog\
-       ├── Bindings.xml
        ├── shupaz_ForeverQuestLog.toc
        └── src\
-           ├── Init.lua
            ├── Utils.lua
            ├── Hooks.lua
            ├── QuestLog.lua
            ├── Tracker.lua
-           └── Options.lua
+           ├── Options.lua
+           └── Init.lua
    ```
 4. Start World of Warcraft and verify **shupaz ForeverQuestLog** is enabled in your AddOn list.
 

@@ -1,8 +1,0 @@
-<Bindings>
-    <Binding name="SHUPAZ_FOREVERQUESTLOG_TOGGLE" category="shupaz ForeverQuestLog">
-        shupaz_ForeverQuestLog_Toggle()
-    </Binding>
-    <Binding name="FOREVERQUESTLOG_TOGGLE" category="shupaz ForeverQuestLog" hidden="true">
-        shupaz_ForeverQuestLog_Toggle()
-    </Binding>
-</Bindings>

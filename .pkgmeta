@@ -1,5 +1,9 @@
 package-as: shupaz_ForeverQuestLog
 
+manual-changelog:
+  filename: change-log.md
+  markup-type: markdown
+
 ignore:
   - .github
   - assets
@@ -7,3 +11,4 @@ ignore:
   - "*.bat"
   - "*.ps1"
   - README.md
+  - change-log.md

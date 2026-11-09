@@ -1,30 +1,139 @@
 local ADDON_NAME, FQL = ...
+if type(FQL) ~= "table" then
+    FQL = {}
+end
+_G.shupaz_ForeverQuestLog = FQL
 
--- ============================================================
--- Tracker Fonts
--- ============================================================
+FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
+FQL.VERSION = "1.0.2"
 
-local BUILTIN_TRACKER_FONTS = {
-    { id = "DEFAULT",  label = "Friz Quadrata (Default)", path = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF" },
-    { id = "ARIALN",   label = "Arial Narrow",            path = "Fonts\\ARIALN.TTF" },
-    { id = "MORPHEUS", label = "Morpheus (Quest Header)", path = "Fonts\\MORPHEUS.TTF" },
-    { id = "SKURRI",   label = "Skurri",                  path = "Fonts\\SKURRI.TTF" },
-    { id = "2002",     label = "2002",                    path = "Fonts\\2002.TTF" },
-    { id = "2002B",    label = "2002 Bold",               path = "Fonts\\2002B.TTF" },
-    { id = "NIMROD",   label = "Nimrod MT",               path = "Fonts\\NIM_____.ttf" },
-    { id = "MOK",      label = "MoK (Page Text)",         path = "Fonts\\K_Pagetext.TTF" },
-    { id = "ARHEI",    label = "AR CrystalzcuheiGBK",     path = "Fonts\\ARHei.TTF" },
-    { id = "ARKAI",    label = "AR ZhongkaiGBK",          path = "Fonts\\ARKai_T.TTF" },
+local MIN_SCALE, MAX_SCALE = 0.6, 1.6
+local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
+FQL.MIN_SCALE = MIN_SCALE
+FQL.MAX_SCALE = MAX_SCALE
+FQL.DEFAULT_WIDTH = DEFAULT_WIDTH
+FQL.DEFAULT_HEIGHT = DEFAULT_HEIGHT
+
+local DB_DEFAULTS = {
+    scale = 1.0,
+    lockWindow = true,
+    useDefaultPosition = true,
+    wowheadBarPosition = "HIDE",
+    hideMapQuestLog = true,
+    showQuestLevels = true,
+    showTooltips = true,
+    trackerByZone = true,
+    trackerCurrentZoneFirst = true,
+    trackerShowZoneCount = true,
+    trackerScale = 1.0,
+    trackerFont = "DEFAULT",
 }
+FQL.DB_DEFAULTS = DB_DEFAULTS
+
+local CHAR_DEFAULTS = {
+    collapsedHeaders = {},
+    collapsedTrackerZones = {},
+    selectedQuestID = nil,
+}
+FQL.CHAR_DEFAULTS = CHAR_DEFAULTS
+
+-- ============================================================
+-- Tracker Fonts (Dynamic Discovery of User's Installed Fonts)
+-- ============================================================
+
+local KNOWN_FONT_NAMES = {
+    ["frizqt__.ttf"]     = "Friz Quadrata",
+    ["frizqt___cyr.ttf"] = "Friz Quadrata (Cyrillic)",
+    ["arialn.ttf"]       = "Arial Narrow",
+    ["morpheus.ttf"]     = "Morpheus",
+    ["morpheus_cyr.ttf"] = "Morpheus (Cyrillic)",
+    ["skurri.ttf"]       = "Skurri",
+    ["skurri_cyr.ttf"]   = "Skurri (Cyrillic)",
+    ["nim_____.ttf"]     = "Nimrod MT",
+    ["2002.ttf"]         = "2002",
+    ["2002b.ttf"]        = "2002 Bold",
+    ["k_pagetext.ttf"]   = "MoK",
+    ["arhei.ttf"]        = "AR Crystalzcuhei",
+    ["arkai_t.ttf"]      = "AR Zhongkai",
+    ["arkai_c.ttf"]      = "AR Heiti",
+    ["bhei00m.ttf"]      = "AR Leisu",
+    ["bhei01b.ttf"]      = "AR Yuan",
+    ["blei00d.ttf"]      = "AR Mingti",
+}
+
+local fontProbeFS
+
+local function NormalizeFontPath(path)
+    if type(path) ~= "string" then return "" end
+    return path:gsub("/", "\\"):lower()
+end
+
+local function IsFontPathAvailable(path)
+    if type(path) ~= "string" or path == "" then return false end
+    if not fontProbeFS and UIParent then
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:Hide()
+        fontProbeFS = f:CreateFontString(nil, "OVERLAY")
+    end
+    if not fontProbeFS then return true end
+    local ok, applied = pcall(fontProbeFS.SetFont, fontProbeFS, path, 12, "")
+    return ok and applied ~= false
+end
+
+local function FormatFontLabelFromPath(path)
+    local file = path:match("([^\\/]+)$") or path
+    local lowerFile = file:lower()
+    if KNOWN_FONT_NAMES[lowerFile] then
+        return KNOWN_FONT_NAMES[lowerFile]
+    end
+    local stem = file:gsub("%.[tT][tT][fF]$", ""):gsub("%.[oO][tT][fF]$", "")
+    stem = stem:gsub("[_%-]+", " ")
+    return stem
+end
 
 function FQL:GetTrackerFonts()
     local list = {}
     local seenPaths = {}
-    for _, entry in ipairs(BUILTIN_TRACKER_FONTS) do
-        list[#list + 1] = entry
-        seenPaths[entry.path:lower()] = true
+    local seenLabels = {}
+
+    -- 1. Current Active Default UI Font
+    local defaultPath = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    if _G.GameFontNormal and type(_G.GameFontNormal.GetFont) == "function" then
+        local ok, p = pcall(_G.GameFontNormal.GetFont, _G.GameFontNormal)
+        if ok and type(p) == "string" and p ~= "" then
+            defaultPath = p
+        end
     end
-    -- Also include any extra fonts registered in LibSharedMedia-3.0 if present
+    local defaultLabel = FormatFontLabelFromPath(defaultPath) .. " (Default)"
+    list[#list + 1] = {
+        id = "DEFAULT",
+        label = defaultLabel,
+        path = defaultPath,
+    }
+    seenPaths[NormalizeFontPath(defaultPath)] = true
+    seenLabels[defaultLabel:lower()] = true
+
+    local extraEntries = {}
+    local function AddFontCandidate(id, label, path)
+        if type(path) ~= "string" or path == "" then return end
+        local normPath = NormalizeFontPath(path)
+        if seenPaths[normPath] then return end
+        if not IsFontPathAvailable(path) then return end
+
+        label = (type(label) == "string" and label ~= "") and label or FormatFontLabelFromPath(path)
+        local normLabel = label:lower()
+        if seenLabels[normLabel] then return end
+
+        seenPaths[normPath] = true
+        seenLabels[normLabel] = true
+        extraEntries[#extraEntries + 1] = {
+            id = id,
+            label = label,
+            path = path,
+        }
+    end
+
+    -- 2. Fonts registered in LibSharedMedia-3.0 by the user's installed addons
     if _G.LibStub then
         local ok, lsm = pcall(_G.LibStub, "LibSharedMedia-3.0", true)
         if ok and lsm and type(lsm.List) == "function" and type(lsm.Fetch) == "function" then
@@ -32,26 +141,63 @@ function FQL:GetTrackerFonts()
             if type(names) == "table" then
                 for _, name in ipairs(names) do
                     local path = lsm:Fetch("font", name)
-                    if type(path) == "string" and path ~= "" and not seenPaths[path:lower()] then
-                        seenPaths[path:lower()] = true
-                        list[#list + 1] = {
-                            id = "LSM:" .. name,
-                            label = name,
-                            path = path,
-                        }
+                    AddFontCandidate("LSM:" .. name, name, path)
+                end
+            end
+        end
+    end
+
+    -- 3. Fonts currently loaded in the user's WoW client via GetFonts()
+    if type(_G.GetFonts) == "function" then
+        local ok, fontNames = pcall(_G.GetFonts)
+        if ok and type(fontNames) == "table" then
+            for _, fName in ipairs(fontNames) do
+                local fObj = (type(fName) == "string") and _G[fName] or nil
+                if fObj and type(fObj.GetFont) == "function" then
+                    local okF, fPath = pcall(fObj.GetFont, fObj)
+                    if okF and type(fPath) == "string" and fPath ~= "" then
+                        local lbl = FormatFontLabelFromPath(fPath)
+                        AddFontCandidate("FONT:" .. NormalizeFontPath(fPath), lbl, fPath)
                     end
                 end
             end
         end
     end
+
+    -- 4. Standard client font globals if present on the user's client
+    for _, gPath in ipairs({
+        _G.STANDARD_TEXT_FONT,
+        _G.UNIT_NAME_FONT,
+        _G.DAMAGE_TEXT_FONT,
+        _G.NAMEPLATE_FONT,
+    }) do
+        if type(gPath) == "string" and gPath ~= "" then
+            AddFontCandidate("FONT:" .. NormalizeFontPath(gPath), FormatFontLabelFromPath(gPath), gPath)
+        end
+    end
+
+    table.sort(extraEntries, function(a, b)
+        return a.label:lower() < b.label:lower()
+    end)
+
+    for _, entry in ipairs(extraEntries) do
+        list[#list + 1] = entry
+    end
+
     return list
 end
 
 function FQL:GetTrackerFontEntry(fontID)
     fontID = fontID or (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT"
     local fonts = self:GetTrackerFonts()
+    local lowerID = tostring(fontID):lower()
     for i, entry in ipairs(fonts) do
-        if entry.id == fontID then
+        if entry.id == fontID or entry.id:lower() == lowerID or entry.label:lower() == lowerID then
+            return entry, i, fonts
+        end
+    end
+    for i, entry in ipairs(fonts) do
+        if entry.path and entry.path:lower():find(lowerID, 1, true) then
             return entry, i, fonts
         end
     end
@@ -61,12 +207,10 @@ end
 function FQL:GetTrackerFontPath()
     local entry = self:GetTrackerFontEntry()
     if not entry or entry.id == "DEFAULT" then
-        return nil -- nil means restore/keep native font path
+        return nil
     end
     return entry.path
 end
-
-
 
 -- ============================================================
 -- Core Helpers & Quest API Wrappers
@@ -84,8 +228,14 @@ local function SafeStr(v)
 end
 
 local function SafeNum(v)
-    if type(v) == "number" and not IsSecret(v) then
+    if IsSecret(v) then
+        return nil
+    end
+    if type(v) == "number" then
         return v
+    end
+    if type(v) == "string" then
+        return tonumber(v)
     end
     return nil
 end
@@ -171,12 +321,6 @@ local function GetMaxQuests()
     return MAX_QUESTS or 25
 end
 
-local function ExpandAllNativeHeaders()
-    if ExpandQuestHeader then
-        pcall(ExpandQuestHeader, 0)
-    end
-end
-
 local function GetNumLogEntries()
     if C_QuestLog and C_QuestLog.GetNumQuestLogEntries then
         local ok, numShown, numQuests = pcall(C_QuestLog.GetNumQuestLogEntries)
@@ -191,6 +335,30 @@ local function GetNumLogEntries()
         end
     end
     return 0, 0
+end
+
+local function ExpandAllNativeHeaders()
+    -- Only call ExpandQuestHeader(0) if a native header is actually collapsed.
+    -- Calling ExpandQuestHeader(0) unconditionally fires QUEST_LOG_UPDATE on every
+    -- refresh and causes an infinite event loop!
+    if not ExpandQuestHeader then return end
+    local numShown = GetNumLogEntries()
+    local hasCollapsed = false
+    for i = 1, numShown do
+        if C_QuestLog and C_QuestLog.GetInfo then
+            local ok, info = pcall(C_QuestLog.GetInfo, i)
+            if ok and type(info) == "table" and info.isHeader and info.isCollapsed then
+                hasCollapsed = true
+                break
+            end
+        end
+    end
+    if hasCollapsed then
+        local prev = FQL._isRefreshing
+        FQL._isRefreshing = true
+        pcall(ExpandQuestHeader, 0)
+        FQL._isRefreshing = prev
+    end
 end
 
 local function GetLogEntryInfo(index)
@@ -265,28 +433,33 @@ end
 
 local function SelectLogQuest(questID, logIndex)
     questID = SafeNum(questID)
-    logIndex = SafeNum(logIndex) or (questID and GetLogIndexForQuest(questID))
-    if C_QuestLog and C_QuestLog.SetSelectedQuest and questID and questID > 0 then
-        pcall(C_QuestLog.SetSelectedQuest, questID)
+    if not questID or questID <= 0 then return end
+    local prev = FQL._isRefreshing
+    FQL._isRefreshing = true
+    if C_QuestLog and C_QuestLog.SetSelectedQuest then
+        local cur = C_QuestLog.GetSelectedQuest and C_QuestLog.GetSelectedQuest()
+        if cur ~= questID then
+            pcall(C_QuestLog.SetSelectedQuest, questID)
+        end
+    elseif SelectQuestLogEntry then
+        logIndex = SafeNum(logIndex) or GetLogIndexForQuest(questID)
+        if logIndex and logIndex > 0 then
+            pcall(SelectQuestLogEntry, logIndex)
+        end
     end
-    if SelectQuestLogEntry and logIndex and logIndex > 0 then
-        pcall(SelectQuestLogEntry, logIndex)
-    end
+    FQL._isRefreshing = prev
 end
 
 local function IsQuestCompleteOrFailed(questID, infoComplete)
-    if C_QuestLog and C_QuestLog.IsComplete and questID and questID > 0 then
-        local ok, done = pcall(C_QuestLog.IsComplete, questID)
-        if ok and done == true then return 1 end
-    end
+    -- Rely on info.isComplete from C_QuestLog.GetInfo(index).
+    -- Do NOT call C_QuestLog.IsComplete(questID) on every quest in the log, because
+    -- uncached quests (e.g. id=26799) trigger QuestCache server queries that get rate-limited
+    -- ("Deny" in QuestCache.log), firing QUEST_LOG_UPDATE in a 10Hz infinite loop and
+    -- blocking Quest Giver Gossip dialogs!
     if infoComplete == 1 or infoComplete == true then
         return 1
     elseif infoComplete == -1 then
         return -1
-    end
-    if C_QuestLog and C_QuestLog.ReadyForTurnIn and questID and questID > 0 then
-        local ok, ready = pcall(C_QuestLog.ReadyForTurnIn, questID)
-        if ok and ready == true then return 1 end
     end
     return 0
 end
@@ -486,7 +659,6 @@ local function GetQuestRewardsData(questID, logIndex)
         specialItem = nil,
     }
 
-    -- Choice rewards
     local numChoices = 0
     if GetNumQuestLogChoices then
         local ok, n = pcall(GetNumQuestLogChoices, questID)
@@ -514,7 +686,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Fixed item rewards
     local numFixed = 0
     if GetNumQuestLogRewards then
         local ok, n = pcall(GetNumQuestLogRewards, questID)
@@ -542,7 +713,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Spell rewards
     if C_QuestInfoSystem and C_QuestInfoSystem.GetQuestRewardSpells and questID then
         local ok, spellIDs = pcall(C_QuestInfoSystem.GetQuestRewardSpells, questID)
         if ok and type(spellIDs) == "table" then
@@ -578,7 +748,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- XP reward
     if GetQuestLogRewardXP then
         local ok, xp = pcall(GetQuestLogRewardXP, questID)
         if not ok or not SafeNum(xp) or xp <= 0 then
@@ -589,7 +758,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Money reward
     if GetQuestLogRewardMoney then
         local ok, money = pcall(GetQuestLogRewardMoney, questID)
         if not ok or not SafeNum(money) or money <= 0 then
@@ -600,7 +768,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Required Money
     if GetQuestLogRequiredMoney then
         local ok, reqMoney = pcall(GetQuestLogRequiredMoney, questID)
         if not ok or not SafeNum(reqMoney) then
@@ -611,7 +778,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Quest Timer
     if GetQuestLogTimeLeft then
         local ok, timeLeft = pcall(GetQuestLogTimeLeft, logIndex)
         if ok and SafeNum(timeLeft) and timeLeft > 0 then
@@ -619,7 +785,6 @@ local function GetQuestRewardsData(questID, logIndex)
         end
     end
 
-    -- Special Quest Item (usable item in log)
     if GetQuestLogSpecialItemInfo and logIndex then
         local ok, link, icon, charges = pcall(GetQuestLogSpecialItemInfo, logIndex)
         if ok and (SafeStr(link) or icon) then
@@ -634,8 +799,6 @@ local function GetQuestRewardsData(questID, logIndex)
 
     return data
 end
-
-
 
 -- ============================================================
 -- Link & Action Helpers
@@ -731,6 +894,63 @@ local function AbandonSelectedQuest(questID, title)
     end
 end
 
+local function ExecuteAbandonAllQuests()
+    ExpandAllNativeHeaders()
+    local numEntries = GetNumLogEntries()
+    local quests = {}
+    for i = numEntries, 1, -1 do
+        local info = GetLogEntryInfo(i)
+        if info and not info.isHeader and not info.isBounty and not info.isHidden and info.questID and info.questID > 0 then
+            quests[#quests + 1] = { questID = info.questID, logIndex = i }
+        end
+    end
+
+    for _, q in ipairs(quests) do
+        local canAbandon = true
+        if C_QuestLog and C_QuestLog.CanAbandonQuest then
+            local ok, res = pcall(C_QuestLog.CanAbandonQuest, q.questID)
+            if ok and res == false then
+                canAbandon = false
+            end
+        end
+        if canAbandon then
+            SelectLogQuest(q.questID, q.logIndex)
+            if C_QuestLog and C_QuestLog.SetAbandonQuest then
+                pcall(C_QuestLog.SetAbandonQuest)
+            elseif SetAbandonQuest then
+                pcall(SetAbandonQuest)
+            end
+            if C_QuestLog and C_QuestLog.AbandonQuest then
+                pcall(C_QuestLog.AbandonQuest)
+            elseif AbandonQuest then
+                pcall(AbandonQuest)
+            end
+        end
+    end
+end
+
+local function AbandonAllQuests()
+    if StaticPopupDialogs and not StaticPopupDialogs["SHUPAZ_FQL_ABANDON_ALL_QUESTS"] then
+        StaticPopupDialogs["SHUPAZ_FQL_ABANDON_ALL_QUESTS"] = {
+            text = "Are you sure you want to abandon ALL quests in your Quest Log?",
+            button1 = YES or "Yes",
+            button2 = NO or "No",
+            OnAccept = function()
+                ExecuteAbandonAllQuests()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+    end
+    if StaticPopup_Show then
+        StaticPopup_Show("SHUPAZ_FQL_ABANDON_ALL_QUESTS")
+    else
+        ExecuteAbandonAllQuests()
+    end
+end
+
 local function ShareSelectedQuest(questID)
     questID = SafeNum(questID)
     if not questID or questID <= 0 then return end
@@ -764,17 +984,53 @@ local function ShowQuestOnWorldMap(questID)
         return
     end
 
-    SetQuestLogCVarClosed()
+    -- Force small (windowed) World Map without embedded quest log
+    if FQL.SetQuestLogCVarClosed then
+        FQL.SetQuestLogCVarClosed()
+    end
+    if C_CVar and C_CVar.SetCVar then
+        pcall(C_CVar.SetCVar, "miniWorldMap", "1")
+    elseif SetCVar then
+        pcall(SetCVar, "miniWorldMap", "1")
+    end
+
+    if WorldMapFrame and WorldMapFrame.IsMaximized and WorldMapFrame:IsMaximized() then
+        if WorldMapFrame.BorderFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.Minimize then
+            pcall(WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.Minimize, WorldMapFrame.BorderFrame.MaximizeMinimizeFrame)
+        elseif WorldMapFrame.Minimize then
+            pcall(WorldMapFrame.Minimize, WorldMapFrame)
+        end
+    end
+
     if C_Map and C_Map.OpenWorldMap then
         pcall(C_Map.OpenWorldMap, mapID)
     elseif ToggleWorldMap then
         if not (WorldMapFrame and WorldMapFrame:IsShown()) then
             pcall(ToggleWorldMap)
         end
+        if mapID and WorldMapFrame and WorldMapFrame.SetMapID then
+            pcall(WorldMapFrame.SetMapID, WorldMapFrame, mapID)
+        end
+    end
+
+    -- Ensure WorldMapFrame is minimized if OpenWorldMap restored maximized state
+    if WorldMapFrame and WorldMapFrame.IsMaximized and WorldMapFrame:IsMaximized() then
+        if WorldMapFrame.BorderFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.Minimize then
+            pcall(WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.Minimize, WorldMapFrame.BorderFrame.MaximizeMinimizeFrame)
+        elseif WorldMapFrame.Minimize then
+            pcall(WorldMapFrame.Minimize, WorldMapFrame)
+        end
+    end
+
+    -- Keep Forever Quest Log open side-by-side with the small World Map
+    if FQL.frame then
+        if not FQL.frame:IsShown() then
+            FQL.frame:Show()
+        elseif FQL.UpdateDefaultPanelPosition then
+            FQL:UpdateDefaultPanelPosition()
+        end
     end
 end
-
-
 
 -- ============================================================
 -- Export Helpers to FQL Namespace
@@ -812,5 +1068,6 @@ FQL.TryInsertQuestChatLink    = TryInsertQuestChatLink
 FQL.InsertOrOpenQuestChatLink = InsertOrOpenQuestChatLink
 FQL.GetQuestWebURL            = GetQuestWebURL
 FQL.AbandonSelectedQuest      = AbandonSelectedQuest
+FQL.AbandonAllQuests          = AbandonAllQuests
 FQL.ShareSelectedQuest        = ShareSelectedQuest
 FQL.ShowQuestOnWorldMap       = ShowQuestOnWorldMap

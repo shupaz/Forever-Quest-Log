@@ -4,21 +4,12 @@ local SafeNum                = FQL.SafeNum
 local SafeStr                = FQL.SafeStr
 local SetBackdrop            = FQL.SetBackdrop
 local PlayClickSound         = FQL.PlayClickSound
+local DB_DEFAULTS            = FQL.DB_DEFAULTS
+local SuppressMapQuestLog    = FQL.SuppressMapQuestLog
+local UpdateKeybindOverrides = FQL.UpdateKeybindOverrides
 
 local MIN_SCALE              = FQL.MIN_SCALE or 0.6
 local MAX_SCALE              = FQL.MAX_SCALE or 1.6
-
-local function SuppressMapQuestLog(...)
-    if FQL.SuppressMapQuestLog then
-        return FQL.SuppressMapQuestLog(...)
-    end
-end
-
-local function UpdateKeybindOverrides(...)
-    if FQL.UpdateKeybindOverrides then
-        return FQL.UpdateKeybindOverrides(...)
-    end
-end
 
 -- ============================================================
 -- Settings Panel (Options -> AddOns -> Forever Quest Log)
@@ -53,20 +44,12 @@ function FQL:CreateOptionsPanel()
 
     local subtitle = bg:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-    subtitle:SetText("Standalone Dual-Pane Quest Log & Zone-Grouped Objective Tracker  |cff888888(v1.0.0)|r")
+    subtitle:SetText("Standalone Dual-Pane Quest Log & Zone-Grouped Objective Tracker  |cff888888(v" .. tostring(FQL.VERSION or "1.0.1") .. ")|r")
 
-    -- Top-Right Action Buttons
-    local openLogBtn = CreateFrame("Button", nil, bg, "UIPanelButtonTemplate")
-    openLogBtn:SetSize(140, 24)
-    openLogBtn:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -18, -18)
-    openLogBtn:SetText("Toggle Quest Log")
-    openLogBtn:SetScript("OnClick", function()
-        FQL:Toggle()
-    end)
-
+    -- Top-Right Action Button
     local resetDefaultsBtn = CreateFrame("Button", nil, bg, "UIPanelButtonTemplate")
     resetDefaultsBtn:SetSize(130, 24)
-    resetDefaultsBtn:SetPoint("RIGHT", openLogBtn, "LEFT", -8, 0)
+    resetDefaultsBtn:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -18, -18)
     resetDefaultsBtn:SetText("Reset Defaults")
 
     local headerSep = bg:CreateTexture(nil, "ARTWORK")
@@ -140,11 +123,11 @@ function FQL:CreateOptionsPanel()
     -- ========================================================
     -- Section 1: Standalone Quest Log Window
     -- ========================================================
-    CreateSectionHeader(bg, "Standalone Quest Log Window", -66)
+    CreateSectionHeader(bg, "Standalone Quest Log Window", -64)
 
     -- Window Scale Slider + Buttons
     local scaleLabel = bg:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    scaleLabel:SetPoint("TOPLEFT", bg, "TOPLEFT", 26, -92)
+    scaleLabel:SetPoint("TOPLEFT", bg, "TOPLEFT", 26, -88)
     scaleLabel:SetText("Window Scale:")
 
     local scaleValueText = bg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -217,8 +200,42 @@ function FQL:CreateOptionsPanel()
         FQL:SetScale(rounded)
     end)
 
+    -- Wowhead URL Bar Position Row
+    local whBarLabel = bg:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    whBarLabel:SetPoint("TOPLEFT", bg, "TOPLEFT", 26, -114)
+    whBarLabel:SetText("Wowhead URL Bar:")
+
+    local whPosButtons = {}
+    local whPosOptions = {
+        { id = "TOP",    label = "Top" },
+        { id = "BOTTOM", label = "Bottom" },
+        { id = "HIDE",   label = "Hidden" },
+    }
+    for i, opt in ipairs(whPosOptions) do
+        local btn = CreateFrame("Button", nil, bg, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        btn:SetSize(84, 20)
+        if i == 1 then
+            btn:SetPoint("LEFT", whBarLabel, "RIGHT", 36, 0)
+        else
+            btn:SetPoint("LEFT", whPosButtons[i - 1], "RIGHT", 6, 0)
+        end
+        SetBackdrop(btn, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 8, 2)
+        btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.text:SetPoint("CENTER", 0, 0)
+        btn.text:SetText(opt.label)
+        btn.posID = opt.id
+        btn:SetScript("OnClick", function(self)
+            PlayClickSound()
+            if FQL.SetWowheadBarPosition then
+                FQL:SetWowheadBarPosition(self.posID)
+            end
+        end)
+        whPosButtons[i] = btn
+    end
+
     CreateOptionCheckbox(
-        bg, -118,
+        bg, -140,
         "Show Quest Levels & Type Tags",
         "Prefixes quest titles with their level and tag indicator (e.g. [60D] for Dungeon, [60G] for Group, [60R] for Raid).",
         "showQuestLevels",
@@ -228,7 +245,7 @@ function FQL:CreateOptionsPanel()
     )
 
     CreateOptionCheckbox(
-        bg, -154,
+        bg, -174,
         "Show Quest Row Hover Tooltips",
         "Displays a quick summary tooltip with objectives, zone, and click shortcuts when hovering over a quest in the list.",
         "showTooltips",
@@ -238,20 +255,26 @@ function FQL:CreateOptionsPanel()
     )
 
     CreateOptionCheckbox(
-        bg, -190,
-        "Lock Quest Log Window Position",
-        "Prevents the standalone Quest Log window from being dragged on screen.",
+        bg, -208,
+        "Lock to Default UIPanel Placement",
+        "Locks the Quest Log to Blizzard's default window slot (side-by-side with Character, Gossip, Quest Giver, etc.). Uncheck to drag freely.",
         "lockWindow",
-        nil
+        function(checked)
+            if checked and shupazForeverQuestLogDB then
+                shupazForeverQuestLogDB.pos = nil
+                shupazForeverQuestLogDB.useDefaultPosition = true
+                FQL:RestorePosition()
+            end
+        end
     )
 
     -- ========================================================
     -- Section 2: World Map Integration
     -- ========================================================
-    CreateSectionHeader(bg, "World Map Integration", -232)
+    CreateSectionHeader(bg, "World Map Integration", -246)
 
     CreateOptionCheckbox(
-        bg, -256,
+        bg, -268,
         "Remove Embedded Quest Log from World Map",
         "Hides the default Quest Log panel attached to the right side of the World Map and redirects Quest Log keybindings (L) to the standalone Forever Quest Log window.",
         "hideMapQuestLog",
@@ -264,11 +287,11 @@ function FQL:CreateOptionsPanel()
     -- ========================================================
     -- Section 3: Objective Tracker (Scale, Font & Zone Grouping)
     -- ========================================================
-    CreateSectionHeader(bg, "Objective Tracker (Scale, Font & Zone Grouping)", -300)
+    CreateSectionHeader(bg, "Objective Tracker (Scale, Font & Zone Grouping)", -308)
 
     -- Objective Tracker Scale Row
     local tScaleLabel = bg:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    tScaleLabel:SetPoint("TOPLEFT", bg, "TOPLEFT", 26, -326)
+    tScaleLabel:SetPoint("TOPLEFT", bg, "TOPLEFT", 26, -332)
     tScaleLabel:SetText("Tracker Scale:")
 
     local tScaleValueText = bg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -352,30 +375,35 @@ function FQL:CreateOptionsPanel()
     fontDropdownArrow:SetPoint("RIGHT", -6, 0)
     fontDropdownArrow:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
 
-    -- Popup Dropdown Menu for Font Selection
+    -- Popup Dropdown Menu for Font Selection (supports mousewheel scrolling)
     local fontMenu = CreateFrame("Frame", nil, panel, BackdropTemplateMixin and "BackdropTemplate" or nil)
     fontMenu:SetFrameStrata("TOOLTIP")
     fontMenu:SetToplevel(true)
     fontMenu:SetPoint("TOPLEFT", fontDropdownBtn, "BOTTOMLEFT", 0, -2)
     fontMenu:SetWidth(248)
+    fontMenu:EnableMouse(true)
+    fontMenu:EnableMouseWheel(true)
     SetBackdrop(fontMenu, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 12, 3)
     fontMenu:SetBackdropColor(0.06, 0.05, 0.04, 0.98)
     fontMenu:SetBackdropBorderColor(0.65, 0.52, 0.24, 0.95)
     fontMenu:Hide()
     fontMenu.rows = {}
+    fontMenu.scrollOffset = 0
 
-    local function PopulateAndToggleFontMenu()
-        if fontMenu:IsShown() then
-            fontMenu:Hide()
-            return
-        end
-        local fonts = FQL:GetTrackerFonts()
-        local currentID = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT"
+    local function RenderFontMenuPage()
+        local fonts = fontMenu.cachedFonts or FQL:GetTrackerFonts()
+        local activeEntry = FQL:GetTrackerFontEntry((shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT")
+        local currentID = activeEntry and activeEntry.id or "DEFAULT"
         local rowH = 22
-        local maxRows = math.min(#fonts, 14)
+        local maxVisible = 12
+        local visibleCount = math.min(#fonts, maxVisible)
+        local maxOffset = math.max(0, #fonts - visibleCount)
 
-        for i = 1, maxRows do
-            local fEntry = fonts[i]
+        if fontMenu.scrollOffset > maxOffset then fontMenu.scrollOffset = maxOffset end
+        if fontMenu.scrollOffset < 0 then fontMenu.scrollOffset = 0 end
+
+        for i = 1, visibleCount do
+            local fEntry = fonts[i + fontMenu.scrollOffset]
             local r = fontMenu.rows[i]
             if not r then
                 r = CreateFrame("Button", nil, fontMenu)
@@ -383,6 +411,11 @@ function FQL:CreateOptionsPanel()
                 r:SetPoint("TOPLEFT", fontMenu, "TOPLEFT", 4, -4 - (i - 1) * rowH)
                 r:SetPoint("TOPRIGHT", fontMenu, "TOPRIGHT", -4, -4 - (i - 1) * rowH)
                 r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+                r:EnableMouseWheel(true)
+                r:SetScript("OnMouseWheel", function(_, delta)
+                    local fn = fontMenu:GetScript("OnMouseWheel")
+                    if fn then fn(fontMenu, delta) end
+                end)
 
                 r.check = r:CreateTexture(nil, "ARTWORK")
                 r.check:SetSize(14, 14)
@@ -414,13 +447,44 @@ function FQL:CreateOptionsPanel()
             end)
             r:Show()
         end
-        for i = maxRows + 1, #fontMenu.rows do
+        for i = visibleCount + 1, #fontMenu.rows do
             fontMenu.rows[i]:Hide()
         end
-        fontMenu:SetHeight(maxRows * rowH + 8)
+        fontMenu:SetHeight(visibleCount * rowH + 8)
+    end
+
+    fontMenu:SetScript("OnMouseWheel", function(_, delta)
+        if not fontMenu:IsShown() then return end
+        fontMenu.scrollOffset = (fontMenu.scrollOffset or 0) - (delta > 0 and 1 or -1)
+        RenderFontMenuPage()
+    end)
+
+    local function PopulateAndToggleFontMenu()
+        if fontMenu:IsShown() then
+            fontMenu:Hide()
+            return
+        end
+        fontMenu.cachedFonts = FQL:GetTrackerFonts()
+        fontMenu.scrollOffset = 0
+        RenderFontMenuPage()
         fontMenu:Show()
     end
 
+    fontDropdownBtn:EnableMouseWheel(true)
+    fontDropdownBtn:SetScript("OnMouseWheel", function(_, delta)
+        local _, idx, fonts = FQL:GetTrackerFontEntry()
+        if not fonts or #fonts == 0 then return end
+        local nextIdx
+        if delta > 0 then
+            nextIdx = (idx - 2) % #fonts + 1
+        else
+            nextIdx = (idx % #fonts) + 1
+        end
+        FQL:SetTrackerFont(fonts[nextIdx].id)
+        if fontMenu:IsShown() then
+            RenderFontMenuPage()
+        end
+    end)
     fontDropdownBtn:SetScript("OnClick", function()
         PlayClickSound()
         PopulateAndToggleFontMenu()
@@ -493,10 +557,9 @@ function FQL:CreateOptionsPanel()
     expandTrackerBtn:SetPoint("TOPLEFT", bg, "TOPLEFT", 24, -502)
     expandTrackerBtn:SetText("Expand Tracker Zones")
     expandTrackerBtn:SetScript("OnClick", function()
-        if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedTrackerZones then
-            wipe(shupazForeverQuestLogCharDB.collapsedTrackerZones)
+        if FQL.SetAllTrackerZonesCollapsed then
+            FQL:SetAllTrackerZonesCollapsed(false)
         end
-        FQL:RefreshObjectiveTracker()
     end)
 
     local collapseTrackerBtn = CreateFrame("Button", nil, bg, "UIPanelButtonTemplate")
@@ -504,23 +567,9 @@ function FQL:CreateOptionsPanel()
     collapseTrackerBtn:SetPoint("LEFT", expandTrackerBtn, "RIGHT", 10, 0)
     collapseTrackerBtn:SetText("Collapse Tracker Zones")
     collapseTrackerBtn:SetScript("OnClick", function()
-        if not shupazForeverQuestLogCharDB then return end
-        shupazForeverQuestLogCharDB.collapsedTrackerZones = shupazForeverQuestLogCharDB.collapsedTrackerZones or {}
-        if _G.QuestObjectiveTracker and _G.QuestObjectiveTracker._fqlZoneHeaders then
-            for _, hdr in ipairs(_G.QuestObjectiveTracker._fqlZoneHeaders) do
-                if hdr:IsShown() and hdr.zoneName then
-                    shupazForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
-                end
-            end
+        if FQL.SetAllTrackerZonesCollapsed then
+            FQL:SetAllTrackerZonesCollapsed(true)
         end
-        if _G.CampaignQuestObjectiveTracker and _G.CampaignQuestObjectiveTracker._fqlZoneHeaders then
-            for _, hdr in ipairs(_G.CampaignQuestObjectiveTracker._fqlZoneHeaders) do
-                if hdr:IsShown() and hdr.zoneName then
-                    shupazForeverQuestLogCharDB.collapsedTrackerZones[hdr.zoneName] = true
-                end
-            end
-        end
-        FQL:RefreshObjectiveTracker()
     end)
 
     local expandLogBtn = CreateFrame("Button", nil, bg, "UIPanelButtonTemplate")
@@ -528,7 +577,9 @@ function FQL:CreateOptionsPanel()
     expandLogBtn:SetPoint("LEFT", collapseTrackerBtn, "RIGHT", 10, 0)
     expandLogBtn:SetText("Expand Quest Log Zones")
     expandLogBtn:SetScript("OnClick", function()
-        FQL:SetAllHeadersCollapsed(false)
+        if FQL.SetAllHeadersCollapsed then
+            FQL:SetAllHeadersCollapsed(false)
+        end
     end)
 
     -- Slash Command Hint Footer
@@ -561,6 +612,19 @@ function FQL:CreateOptionsPanel()
             cb:SetChecked(val ~= false and val ~= nil)
         end
 
+        local curWhPos = shupazForeverQuestLogDB.wowheadBarPosition or "HIDE"
+        for _, btn in ipairs(whPosButtons) do
+            if btn.posID == curWhPos then
+                btn:SetBackdropColor(0.22, 0.16, 0.08, 0.98)
+                btn:SetBackdropBorderColor(0.95, 0.78, 0.28, 1)
+                btn.text:SetTextColor(1.0, 0.85, 0.20)
+            else
+                btn:SetBackdropColor(0.08, 0.07, 0.05, 0.92)
+                btn:SetBackdropBorderColor(0.42, 0.34, 0.18, 0.85)
+                btn.text:SetTextColor(0.75, 0.72, 0.65)
+            end
+        end
+
         local trackerEnabled = (shupazForeverQuestLogDB.trackerByZone ~= false)
         cbTrackerCurrentZone:SetEnabled(trackerEnabled)
         cbTrackerCurrentZone:SetAlpha(trackerEnabled and 1.0 or 0.45)
@@ -583,6 +647,9 @@ function FQL:CreateOptionsPanel()
         FQL:SetScale(DB_DEFAULTS.scale or 1.0)
         FQL:SetTrackerScale(DB_DEFAULTS.trackerScale or 1.0)
         FQL:SetTrackerFont(DB_DEFAULTS.trackerFont or "DEFAULT")
+        if FQL.UpdateWowheadBarLayout then
+            FQL:UpdateWowheadBarLayout()
+        end
         FQL:RestorePosition()
         SuppressMapQuestLog()
         UpdateKeybindOverrides()

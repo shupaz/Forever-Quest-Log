@@ -1,54 +1,31 @@
 local ADDON_NAME, FQL = ...
-if type(FQL) ~= "table" then
-    FQL = {}
-end
-_G.shupaz_ForeverQuestLog = FQL
 
-FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.1"
-
--- Keybinding label in Options > Keybindings > AddOns
-BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG = "shupaz ForeverQuestLog"
-BINDING_NAME_SHUPAZ_FOREVERQUESTLOG_TOGGLE = "Toggle Quest Log"
-_G["BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
-_G["BINDING_NAME_SHUPAZ_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
-_G["BINDING_HEADER_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
-_G["BINDING_NAME_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
-
-local MIN_SCALE, MAX_SCALE = 0.6, 1.6
-local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
-FQL.MIN_SCALE = MIN_SCALE
-FQL.MAX_SCALE = MAX_SCALE
-FQL.DEFAULT_WIDTH = DEFAULT_WIDTH
-FQL.DEFAULT_HEIGHT = DEFAULT_HEIGHT
-
-local DB_DEFAULTS = {
-    scale = 1.0,
-    lockWindow = false,
-    useDefaultPosition = true,
-    hideMapQuestLog = true,
-    showQuestLevels = true,
-    showTooltips = true,
-    trackerByZone = true,
-    trackerCurrentZoneFirst = true,
-    trackerShowZoneCount = true,
-    trackerScale = 1.0,
-    trackerFont = "DEFAULT",
-}
-FQL.DB_DEFAULTS = DB_DEFAULTS
-
-local CHAR_DEFAULTS = {
-    collapsedHeaders = {},
-    collapsedTrackerZones = {},
-    selectedQuestID = nil,
-}
-FQL.CHAR_DEFAULTS = CHAR_DEFAULTS
+local SafeNum                    = FQL.SafeNum
+local DB_DEFAULTS                = FQL.DB_DEFAULTS
+local CHAR_DEFAULTS              = FQL.CHAR_DEFAULTS
+local SuppressMapQuestLog        = FQL.SuppressMapQuestLog
+local UpdateKeybindOverrides     = FQL.UpdateKeybindOverrides
+local SetupMapAndBindingHooks    = FQL.SetupMapAndBindingHooks
+local SetupObjectiveTrackerHooks = FQL.SetupObjectiveTrackerHooks
 
 -- ============================================================
 -- Public Window Controls & Addon Compartment / Slash Commands
 -- ============================================================
 
+function FQL:IsBlockingMenuOpen()
+    if _G.GameMenuFrame and type(_G.GameMenuFrame.IsShown) == "function" then
+        local ok, shown = pcall(_G.GameMenuFrame.IsShown, _G.GameMenuFrame)
+        if ok and shown then return true end
+    end
+    if _G.SettingsPanel and type(_G.SettingsPanel.IsShown) == "function" then
+        local ok, shown = pcall(_G.SettingsPanel.IsShown, _G.SettingsPanel)
+        if ok and shown then return true end
+    end
+    return false
+end
+
 function FQL:Open()
+    if self:IsBlockingMenuOpen() then return end
     local frame = self:CreateMainFrame()
     if not frame:IsShown() then
         frame:Show()
@@ -68,17 +45,30 @@ function FQL:Toggle()
     if frame:IsShown() then
         frame:Hide()
     else
+        if self:IsBlockingMenuOpen() then return end
         frame:Show()
     end
 end
 
 function FQL:OpenToQuest(questID)
+    if self:IsBlockingMenuOpen() then return end
     questID = SafeNum(questID)
     self:CreateMainFrame()
     if questID and questID > 0 then
         self.selectedQuestID = questID
         if shupazForeverQuestLogCharDB then
             shupazForeverQuestLogCharDB.selectedQuestID = questID
+            if shupazForeverQuestLogCharDB.collapsedHeaders and self.GetQuestZoneLookup then
+                local questToZone = self:GetQuestZoneLookup()
+                local zoneInfo = questToZone and questToZone[questID]
+                if zoneInfo and zoneInfo.zone then
+                    shupazForeverQuestLogCharDB.collapsedHeaders[zoneInfo.zone] = nil
+                end
+            end
+        end
+        local logIndex = FQL.GetLogIndexForQuest and FQL.GetLogIndexForQuest(questID)
+        if FQL.SelectLogQuest then
+            FQL.SelectLogQuest(questID, logIndex)
         end
     end
     self:Open()
@@ -113,11 +103,6 @@ function _G.shupaz_ForeverQuestLog_OnAddonCompartmentLeave()
 end
 _G.ForeverQuestLog_OnAddonCompartmentLeave = _G.shupaz_ForeverQuestLog_OnAddonCompartmentLeave
 
-_G["BINDING_HEADER_SHUPAZ_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
-_G["BINDING_NAME_SHUPAZ_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
-_G["BINDING_HEADER_FOREVERQUESTLOG"] = "shupaz ForeverQuestLog"
-_G["BINDING_NAME_FOREVERQUESTLOG_TOGGLE"] = "Toggle Quest Log"
-
 SLASH_FOREVERQUESTLOG1 = "/fql"
 SLASH_FOREVERQUESTLOG2 = "/questlog"
 SlashCmdList["FOREVERQUESTLOG"] = function(msg)
@@ -133,11 +118,6 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         FQL:RestorePosition()
         FQL:Open()
         print("|cffffd200shupaz ForeverQuestLog:|r Window position and scale reset to default.")
-        return
-    end
-    if msg == "fixmenu" then
-        InitializeMicroMenuButtons()
-        print("|cff00ff00[Forever Quest Log]|r Re-registered Micro Menu buttons.")
         return
     end
     if msg == "tracker" then
@@ -163,36 +143,6 @@ end
 -- ============================================================
 -- Event Handling & Refresh Schedulers
 -- ============================================================
-
-local function SetupObjectiveTrackerHooks(...)
-    if FQL.SetupObjectiveTrackerHooks then
-        return FQL.SetupObjectiveTrackerHooks(...)
-    end
-end
-
-local function SetupMapAndBindingHooks(...)
-    if FQL.SetupMapAndBindingHooks then
-        return FQL.SetupMapAndBindingHooks(...)
-    end
-end
-
-local function UpdateKeybindOverrides(...)
-    if FQL.UpdateKeybindOverrides then
-        return FQL.UpdateKeybindOverrides(...)
-    end
-end
-
-local function InitializeMicroMenuButtons(...)
-    if FQL.InitializeMicroMenuButtons then
-        return FQL.InitializeMicroMenuButtons(...)
-    end
-end
-
-local function SuppressMapQuestLog(...)
-    if FQL.SuppressMapQuestLog then
-        return FQL.SuppressMapQuestLog(...)
-    end
-end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
@@ -261,10 +211,17 @@ FQL.ScheduleTrackerRefresh = ScheduleTrackerRefresh
 FQL.ScheduleRefresh = ScheduleRefresh
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
+    if FQL._isRefreshing and (event == "QUEST_LOG_UPDATE" or event == "UNIT_QUEST_LOG_CHANGED") then
+        return
+    end
+
     if event == "ADDON_LOADED" then
         if arg1 == "Blizzard_ObjectiveTracker" then
             SetupObjectiveTrackerHooks()
             ScheduleTrackerRefresh()
+        end
+        if FQL.HookKnownPanels then
+            FQL:HookKnownPanels()
         end
         return
     end
@@ -275,6 +232,16 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             if shupazForeverQuestLogDB[k] == nil then
                 shupazForeverQuestLogDB[k] = v
             end
+        end
+        if not shupazForeverQuestLogDB._placementV2 then
+            shupazForeverQuestLogDB._placementV2 = true
+            shupazForeverQuestLogDB.lockWindow = true
+            shupazForeverQuestLogDB.useDefaultPosition = true
+            shupazForeverQuestLogDB.pos = nil
+        end
+        if not shupazForeverQuestLogDB._wowheadHideDefaultV1 then
+            shupazForeverQuestLogDB._wowheadHideDefaultV1 = true
+            shupazForeverQuestLogDB.wowheadBarPosition = "HIDE"
         end
 
         shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
@@ -306,7 +273,6 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             FQL._needsTrackerCombatRefresh = false
             FQL:RefreshObjectiveTracker()
         end
-        InitializeMicroMenuButtons()
         SuppressMapQuestLog()
         SetupObjectiveTrackerHooks()
         ScheduleRefresh()

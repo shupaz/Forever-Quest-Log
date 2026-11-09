@@ -30,6 +30,8 @@ local function GetMapSidePanelToggle()
     return nil
 end
 
+local hookedMapFrames = {}
+
 local function SuppressMapQuestLog()
     if shupazForeverQuestLogDB and shupazForeverQuestLogDB.hideMapQuestLog == false then
         local toggle = GetMapSidePanelToggle()
@@ -60,8 +62,8 @@ local function SuppressMapQuestLog()
             toggle:Hide()
             if toggle.EnableMouse then toggle:EnableMouse(false) end
         end
-        if not toggle._fqlHooked then
-            toggle._fqlHooked = true
+        if not hookedMapFrames[toggle] then
+            hookedMapFrames[toggle] = true
             toggle:HookScript("OnShow", function(self)
                 if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.hideMapQuestLog == false then return end
                 self:SetAlpha(0)
@@ -81,8 +83,8 @@ local function SuppressMapQuestLog()
 
     if _G.QuestMapFrame then
         _G.QuestMapFrame:SetAlpha(0)
-        if not _G.QuestMapFrame._fqlHooked then
-            _G.QuestMapFrame._fqlHooked = true
+        if not hookedMapFrames[_G.QuestMapFrame] then
+            hookedMapFrames[_G.QuestMapFrame] = true
             _G.QuestMapFrame:HookScript("OnShow", function(self)
                 if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.hideMapQuestLog == false then return end
                 SetQuestLogCVarClosed()
@@ -99,60 +101,23 @@ local function UpdateKeybindOverrides()
     end
     FQL._needsBindingUpdate = false
     if not FQL.bindingOwner then
-        FQL.bindingOwner = CreateFrame("Frame", "shupaz_ForeverQuestLogBindingFrame", UIParent)
+        local btn = CreateFrame("Button", "shupaz_ForeverQuestLogBindingButton")
+        btn:RegisterForClicks("AnyDown")
+        btn:SetScript("OnClick", function()
+            FQL:Toggle()
+        end)
+        FQL.bindingOwner = btn
     end
     if ClearOverrideBindings then
         ClearOverrideBindings(FQL.bindingOwner)
     end
-    if GetBindingKey and SetOverrideBinding then
+    if GetBindingKey and SetOverrideBindingClick then
         local key1, key2 = GetBindingKey("TOGGLEQUESTLOG")
         if key1 and key1 ~= "" then
-            SetOverrideBinding(FQL.bindingOwner, false, key1, "FOREVERQUESTLOG_TOGGLE")
+            SetOverrideBindingClick(FQL.bindingOwner, false, key1, "shupaz_ForeverQuestLogBindingButton")
         end
         if key2 and key2 ~= "" then
-            SetOverrideBinding(FQL.bindingOwner, false, key2, "FOREVERQUESTLOG_TOGGLE")
-        end
-    end
-end
-
-local function InitializeMicroMenuButtons()
-    local buttonNames = {
-        "CharacterMicroButton",
-        "ProfessionMicroButton",
-        "SpellbookMicroButton",
-        "SpellBookMicroButton",
-        "TalentMicroButton",
-        "TalentsMicroButton",
-        "PlayerSpellsMicroButton",
-        "AchievementMicroButton",
-        "QuestLogMicroButton",
-        "GuildMicroButton",
-        "LFDMicroButton",
-        "LFGMicroButton",
-        "CollectionsMicroButton",
-        "EJMicroButton",
-        "StoreMicroButton",
-        "MainMenuMicroButton",
-        "HelpMicroButton",
-    }
-    for _, name in ipairs(buttonNames) do
-        local b = _G[name]
-        if b and b.RegisterForClicks then
-            b:RegisterForClicks("AnyDown")
-        end
-    end
-    if _G.MicroMenu and _G.MicroMenu.GetChildren then
-        for _, child in ipairs({ _G.MicroMenu:GetChildren() }) do
-            if child and child.RegisterForClicks then
-                child:RegisterForClicks("AnyDown")
-            end
-        end
-    end
-    if _G.MicroMenuContainer and _G.MicroMenuContainer.GetChildren then
-        for _, child in ipairs({ _G.MicroMenuContainer:GetChildren() }) do
-            if child and child.RegisterForClicks then
-                child:RegisterForClicks("AnyDown")
-            end
+            SetOverrideBindingClick(FQL.bindingOwner, false, key2, "shupaz_ForeverQuestLogBindingButton")
         end
     end
 end
@@ -163,7 +128,6 @@ local function SetupMapAndBindingHooks()
 
     SuppressMapQuestLog()
     UpdateKeybindOverrides()
-    InitializeMicroMenuButtons()
 
     if WorldMapFrame then
         WorldMapFrame:HookScript("OnShow", function()
@@ -171,43 +135,15 @@ local function SetupMapAndBindingHooks()
         end)
     end
 
-    -- Intercept ONLY QuestLogMicroButton clicks without tainting UpdateMicroButtons,
-    -- WorldMapFrame, or UIParent's ShowUIPanel manager.
+    -- Redirect ONLY QuestLogMicroButton to Forever Quest Log using standard Up-clicks
+    -- (never touch other MicroMenu buttons and never use "AnyDown").
     if _G.QuestLogMicroButton and CanChangeFrame(_G.QuestLogMicroButton) then
         if _G.QuestLogMicroButton.RegisterForClicks then
-            _G.QuestLogMicroButton:RegisterForClicks("AnyDown")
+            _G.QuestLogMicroButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         end
         _G.QuestLogMicroButton:SetScript("OnClick", function(_, button)
             if button == "RightButton" then return end
             FQL:Toggle()
-        end)
-    end
-
-    if _G.QuestMapFrame_OpenToQuestDetails then
-        hooksecurefunc("QuestMapFrame_OpenToQuestDetails", function(questID)
-            if questID and questID > 0 then
-                if WorldMapFrame and WorldMapFrame:IsShown() and CanChangeFrame(WorldMapFrame) and HideUIPanel then
-                    pcall(HideUIPanel, WorldMapFrame)
-                end
-                FQL:OpenToQuest(questID)
-            end
-        end)
-    end
-
-    if _G.QuestMapFrame_ShowQuestDetails then
-        hooksecurefunc("QuestMapFrame_ShowQuestDetails", function(questID)
-            if questID and questID > 0 then
-                FQL:OpenToQuest(questID)
-            end
-        end)
-    end
-
-    -- Ensure Escape closes the Quest Log window seamlessly
-    if type(_G.CloseSpecialWindows) == "function" then
-        hooksecurefunc("CloseSpecialWindows", function()
-            if FQL.frame and FQL.frame:IsShown() then
-                FQL.frame:Hide()
-            end
         end)
     end
 
@@ -218,24 +154,7 @@ local function SetupMapAndBindingHooks()
             end
         end)
     end
-
-    if type(_G.ToggleGameMenu) == "function" then
-        hooksecurefunc("ToggleGameMenu", function()
-            if FQL.frame and FQL.frame:IsShown() then
-                FQL.frame:Hide()
-                if _G.GameMenuFrame and _G.GameMenuFrame:IsShown() then
-                    if HideUIPanel then
-                        pcall(HideUIPanel, _G.GameMenuFrame)
-                    else
-                        pcall(_G.GameMenuFrame.Hide, _G.GameMenuFrame)
-                    end
-                end
-            end
-        end)
-    end
 end
-
-
 
 -- ============================================================
 -- Export Hooks to FQL Namespace
@@ -245,5 +164,4 @@ FQL.SetQuestLogCVarClosed      = SetQuestLogCVarClosed
 FQL.GetMapSidePanelToggle      = GetMapSidePanelToggle
 FQL.SuppressMapQuestLog        = SuppressMapQuestLog
 FQL.UpdateKeybindOverrides     = UpdateKeybindOverrides
-FQL.InitializeMicroMenuButtons = InitializeMicroMenuButtons
 FQL.SetupMapAndBindingHooks    = SetupMapAndBindingHooks
