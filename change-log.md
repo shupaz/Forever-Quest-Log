@@ -4,6 +4,13 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.3] - 2026-04-19
+
+### Fixed
+- **Full 25-Quest Objective Tracker Capacity**: Restored the unlimited height budget pass (`ForceUnlimitedTrackerHeight` / `NeedsFullHeightRetry`) using the zero-taint `TState` table so `QuestObjectiveTracker` builds blocks for all tracked quests (up to 25) instead of truncating after ~14 quests when screen `availableHeight` is reached.
+
+---
+
 ## [v1.0.2] - 2026-04-19
 
 ### Added

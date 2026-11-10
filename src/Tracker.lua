@@ -1581,6 +1581,26 @@ local function HandleTrackerQuestClick(block, mouseButton)
     end
 end
 
+local function ForceUnlimitedTrackerHeight(self)
+    if not self then return end
+    local cur = SafeNum(self.availableHeight)
+    if cur and cur > 40 and cur < 50000 then
+        TS(self).nativeAvailableHeight = cur
+    end
+    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.trackerByZone ~= false then
+        self.availableHeight = 100000
+    end
+end
+
+local function NeedsFullHeightRetry(tracker)
+    if not tracker then return false end
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then return false end
+    if tracker.hasSkippedBlocks then return true end
+    local avail = SafeNum(tracker.availableHeight)
+    if avail and avail < 50000 then return true end
+    return false
+end
+
 local function HookSingleTrackerModule(tracker)
     if not tracker then return end
     local ts = TS(tracker)
@@ -1589,10 +1609,7 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.BeginLayout then
         hooksecurefunc(tracker, "BeginLayout", function(self)
-            local cur = SafeNum(self.availableHeight)
-            if cur and cur > 40 and cur < 50000 then
-                TS(self).nativeAvailableHeight = cur
-            end
+            ForceUnlimitedTrackerHeight(self)
             local cFrame = self.ContentsFrame or self
             if cFrame and cFrame.GetChildren then
                 for _, child in ipairs({ cFrame:GetChildren() }) do
@@ -1604,8 +1621,35 @@ local function HookSingleTrackerModule(tracker)
         end)
     end
 
+    local preFitMethods = {
+        "MarkBlocksUnused",
+        "AddAutoQuestObjectives",
+        "EnumQuestWatchData",
+        "ShouldDisplayQuest",
+        "UpdateSingle",
+        "GetBlock",
+        "SetBlockHeader",
+        "AddHeader",
+        "AnchorBlock",
+        "AddBlock",
+    }
+    for _, mName in ipairs(preFitMethods) do
+        if type(tracker[mName]) == "function" then
+            hooksecurefunc(tracker, mName, ForceUnlimitedTrackerHeight)
+        end
+    end
+
     if tracker.EndLayout then
         hooksecurefunc(tracker, "EndLayout", function(self)
+            local s = TS(self)
+            if NeedsFullHeightRetry(self) then
+                if not s.retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and self.Update then
+                    s.retryingFullHeight = true
+                    pcall(self.Update, self, 100000, false)
+                    s.retryingFullHeight = false
+                    return
+                end
+            end
             FQL:ApplyTrackerZoneLayout(self)
         end)
     elseif tracker.LayoutContents then
@@ -1616,7 +1660,7 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.Update then
         hooksecurefunc(tracker, "Update", function(self, _, dirtyUpdate)
-            if dirtyUpdate and not (InCombatLockdown and InCombatLockdown()) then
+            if dirtyUpdate and not TS(self).retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) then
                 FQL:ApplyTrackerZoneLayout(self)
             end
         end)
@@ -1651,10 +1695,18 @@ local function SetupObjectiveTrackerHooks()
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
                 if _G.QuestObjectiveTracker then
-                    FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
+                    if NeedsFullHeightRetry(_G.QuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.QuestObjectiveTracker.Update then
+                        pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
+                    else
+                        FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
+                    end
                 end
                 if _G.CampaignQuestObjectiveTracker then
-                    FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
+                    if NeedsFullHeightRetry(_G.CampaignQuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.CampaignQuestObjectiveTracker.Update then
+                        pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
+                    else
+                        FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
+                    end
                 end
             end)
         end
@@ -1683,13 +1735,40 @@ function FQL:RefreshObjectiveTracker()
         return
     end
 
+    if not inCombat then
+        if _G.QuestObjectiveTracker then
+            _G.QuestObjectiveTracker.availableHeight = 100000
+            if _G.QuestObjectiveTracker.MarkDirty then
+                pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
+            end
+            if _G.QuestObjectiveTracker.Update then
+                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
+            end
+        end
+        if _G.CampaignQuestObjectiveTracker then
+            _G.CampaignQuestObjectiveTracker.availableHeight = 100000
+            if _G.CampaignQuestObjectiveTracker.MarkDirty then
+                pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
+            end
+            if _G.CampaignQuestObjectiveTracker.Update then
+                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
+            end
+        end
+    else
+        self._needsTrackerCombatRefresh = true
+    end
+
     if _G.QuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
     end
     if _G.CampaignQuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
     end
-    if inCombat then
+    if not inCombat then
+        if _G.ObjectiveTrackerFrame and _G.ObjectiveTrackerFrame.UpdateHeight then
+            pcall(_G.ObjectiveTrackerFrame.UpdateHeight, _G.ObjectiveTrackerFrame)
+        end
+    else
         self._needsTrackerCombatRefresh = true
     end
 end
