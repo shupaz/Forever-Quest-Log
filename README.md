@@ -39,6 +39,7 @@
 - **Current Zone Priority**: Automatically floats quests in your current zone to the very top of your tracker.
 - **Progress Badges**: Zone headers display real-time completion status (e.g. `(3/5)`).
 - **Instant Real-Time Updates**: Quest kills, item pickups, and criteria updates refresh the tracker immediately.
+- **Full 25-Quest Tracker Capacity**: Bypasses Blizzard's screen-height truncation (`availableHeight`) so all 25 tracked quests load into the tracker and are never cut off.
 - **Smart Custom Scrollbar**: A sleek, non-intrusive scrollbar automatically appears whenever your tracked quests exceed screen bounds. Scroll smoothly using your mouse wheel or drag the scrollbar thumb.
 
 ---
@@ -46,9 +47,9 @@
 ### 🎨 Customization & Modern Integration
 - **Custom Fonts**: Dynamically discovers all fonts active in your WoW client (`GetFonts()`) plus any fonts registered via **LibSharedMedia-3.0**, with mousewheel scrolling support.
 - **Independent Scaling**: Configure Quest Log scale and Objective Tracker scale separately (60% to 160%).
-- **World Map Decoupling**: Completely suppresses the embedded World Map quest panel and redirects the Micro Menu Quest button directly to the standalone Quest Log.
+- **World Map Decoupling**: Completely suppresses the embedded World Map quest panel, opens the World Map in its small (windowed) view side-by-side when clicking **Show Map**, and redirects the Micro Menu Quest button directly to the standalone Quest Log.
 - **Minimap Addon Compartment**: Left-click to toggle the Quest Log, right-click to instantly open settings.
-- **Configurable Keybinding**: Default bound to **L** (configurable in Game Options > Keybindings > AddOns).
+- **Native Keybinding Integration**: Automatically uses your configured **Toggle Quest Log** keybind (default **L**).
 
 ---
 
@@ -69,11 +70,10 @@
 | Command | Description |
 | :--- | :--- |
 | `/fql` or `/questlog` | Toggle the standalone Quest Log window. |
-| `/fql opt` or `/fql config` | Open the AddOn Settings panel. |
+| `/fql options` (or `opt`, `config`, `settings`) | Open the AddOn Settings panel. |
 | `/fql tracker` | Toggle Objective Tracker zone grouping on or off. |
 | `/fql reset` | Reset the Quest Log window position and scale back to defaults. |
 | `/fql scale <number>` | Set window scale directly (e.g. `/fql scale 1.1`). |
-| `/fql fixmenu` | Re-register Micro Menu button hooks if overridden by other addons. |
 
 ---
 
@@ -81,22 +81,25 @@
 
 Access the settings panel via:
 - Game Menu (`ESC`) > **Options** > **AddOns** > **shupaz ForeverQuestLog**
-- Or type `/fql opt` in chat.
+- Clicking the **Gear icon** in the top-right toolbar of the Forever Quest Log window
+- Or typing `/fql options` in chat.
 
 ### Settings Include:
-- **Quest Log Window**:
-  - Scale slider (60% to 160%).
-  - Lock Window (prevent dragging).
-  - Use Default Screen Position (auto-dock beside character/spellbook windows).
-  - Show Quest Levels in quest list.
-  - Show Detailed Tooltips on hover.
-  - Suppress Embedded World Map Quest Log.
+- **Standalone Quest Log Window**:
+  - **Window Scale** slider (`60%` to `160%`) and **Default Position** button.
+  - **Wowhead URL Bar** placement selector (**Top | Bottom | Hidden**, default **Hidden**).
+  - **Show Quest Levels & Type Tags** (`[60D]`, `[60G]`, `[60R]`).
+  - **Show Quest Row Hover Tooltips**.
+  - **Lock to Default UIPanel Placement** (auto-dock beside narrow Blizzard panels and small World Map; uncheck to drag freely).
+- **World Map Integration**:
+  - **Remove Embedded Quest Log from World Map**.
 - **Objective Tracker**:
-  - Group Tracked Quests by Zone.
-  - Prioritize Current Zone (floats current zone to top).
-  - Show Zone Quest Count Badges (`(x/y)`).
-  - Objective Tracker Scale slider (60% to 160%).
-  - Objective Tracker Font dropdown (10 built-in fonts + LibSharedMedia).
+  - **Tracker Scale** slider (`60%` to `160%`).
+  - **Tracker Font** dropdown (dynamically discovers installed client fonts + `LibSharedMedia-3.0`, with mousewheel cycling/scrolling).
+  - **Group & Collapse Quests by Zone in Objective Tracker**.
+  - **Prioritize Current Player Zone at Top of Tracker**.
+  - **Show Active Quest Count on Tracker Zone Headers** (`(x/y)`).
+  - Quick actions: **Expand Tracker Zones**, **Collapse Tracker Zones**, and **Expand Quest Log Zones**.
 
 ---
 
@@ -149,6 +152,12 @@ Forever-Quest-Log/
            └── Init.lua
    ```
 4. Start World of Warcraft and verify **shupaz ForeverQuestLog** is enabled in your AddOn list.
+
+---
+
+## 📋 Changelog
+
+See [change-log.md](change-log.md) for the full release history.
 
 ---
 
