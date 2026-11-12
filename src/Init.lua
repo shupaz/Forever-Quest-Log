@@ -112,12 +112,15 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         return
     end
     if msg == "reset" then
-        shupazForeverQuestLogDB.pos = nil
-        shupazForeverQuestLogDB.useDefaultPosition = true
-        FQL:SetScale(1.0)
-        FQL:RestorePosition()
-        FQL:Open()
-        print("|cffffd200shupaz ForeverQuestLog:|r Window position and scale reset to default.")
+        if FQL.ResetToDefaults then
+            FQL:ResetToDefaults()
+        else
+            shupazForeverQuestLogDB.pos = nil
+            shupazForeverQuestLogDB.useDefaultPosition = true
+            FQL:SetScale(1.0)
+            FQL:RestorePosition()
+            FQL:Open()
+        end
         return
     end
     if msg == "tracker" then
@@ -255,7 +258,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         SetupMapAndBindingHooks()
         SetupObjectiveTrackerHooks()
         FQL:CreateMainFrame()
-        FQL:CreateOptionsPanel()
+        pcall(FQL.CreateOptionsPanel, FQL)
         ScheduleTrackerRefresh()
         return
     end

@@ -4,6 +4,24 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.4] - 2026-11-12
+
+### Added
+- **Dynamic Quest Title Wrapping**: Quest titles in the standalone Quest Log now automatically wrap into multi-line rows instead of cutting off with ellipses when long titles exceed row width.
+- **Quest Difficulty Color-Coding in Quest Log**: Quest titles in the Quest Log list are now color-coded dynamically based on quest level difficulty relative to the player (Red, Orange, Yellow, Green, Grey), matching the Objective Tracker.
+- **Real-Time Level-Up Color Updates**: Leveling up (`PLAYER_LEVEL_UP`) now immediately updates difficulty colors across both the Quest Log and the Objective Tracker without requiring a UI reload or zone change.
+- **Independent Font Size Scaling**: Added dedicated Font Size sliders (80%–160%) for both the Quest Log Window and the Objective Tracker in AddOn Options, allowing players to scale text independently from overall window/frame scale.
+- **Native Blizzard Settings UI Integration**:
+  - Rebuilt the options panel with Blizzard's native `SettingsListTemplate` engine (`Settings.RegisterCanvasLayoutCategory`), embedding authentic Dragonflight / The War Within section headers, hover highlights, diamond slider tracks with steppers, and native dropdowns.
+  - Reorganized settings into a clean hierarchy: **Quest Log Window**, **Objective Tracker**, and **World Map**.
+  - Added Blizzard's native **Defaults** header button with hover tooltip and instant full-reset capability, and synchronized `/fql reset` to reset all settings and placement.
+
+### Changed
+- Reorganized options sections so **World Map** settings appear at the bottom.
+- Removed legacy canvas implementation, obsolete zone expand/collapse buttons, and redundant window position reset button in favor of the unified Defaults reset.
+
+---
+
 ## [v1.0.3] - 2026-04-19
 
 ### Fixed

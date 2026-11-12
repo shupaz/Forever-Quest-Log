@@ -12,6 +12,7 @@ local GetLogEntryInfo         = FQL.GetLogEntryInfo
 local IsQuestWatchedByID      = FQL.IsQuestWatchedByID
 local SetQuestWatchedByID     = FQL.SetQuestWatchedByID
 local IsQuestCompleteOrFailed = FQL.IsQuestCompleteOrFailed
+local GetDifficultyColor      = FQL.GetDifficultyColor
 
 local MIN_SCALE               = FQL.MIN_SCALE or 0.6
 local MAX_SCALE               = FQL.MAX_SCALE or 1.6
@@ -96,6 +97,7 @@ function FQL:GetQuestZoneLookup()
                     questOrder = i,
                     completeState = IsQuestCompleteOrFailed(info.questID, info.isComplete),
                     title = info.title,
+                    level = info.level,
                 }
             end
         end
@@ -696,14 +698,20 @@ local function ApplyFontToFontString(fs, fontPath)
     local fst = FS(fs)
     if not fst.origFont then
         fst.origFont = SafeStr(curFont) or (STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF")
-        fst.origSize = SafeNum(curSize) or 12
+        local sz = SafeNum(curSize) or 12
+        if sz <= 0 then sz = 12 end
+        fst.origSize = sz
         fst.origFlags = SafeStr(curFlags) or ""
     end
     local targetFont = fontPath or fst.origFont
-    local size = SafeNum(curSize) or fst.origSize or 12
+    local fontScale = (shupazForeverQuestLogDB and SafeNum(shupazForeverQuestLogDB.trackerFontScale)) or 1.0
+    if fontScale < 0.5 then fontScale = 0.5 elseif fontScale > 2.5 then fontScale = 2.5 end
+    local baseSize = fst.origSize or 12
+    if baseSize <= 0 then baseSize = 12 end
+    local targetSize = math.max(8, math.floor(baseSize * fontScale + 0.5))
     local flags = SafeStr(curFlags) or fst.origFlags or ""
-    if curFont ~= targetFont then
-        pcall(fs.SetFont, fs, targetFont, size, flags)
+    if curFont ~= targetFont or curSize ~= targetSize then
+        pcall(fs.SetFont, fs, targetFont, targetSize, flags)
     end
 end
 
@@ -752,6 +760,39 @@ local function ApplyFontToTrackerBlock(block, fontPath)
                 end
             end
         end
+    end
+end
+
+local function ApplyBlockHeaderColor(block, qid, qMeta)
+    if not block or not GetDifficultyColor then return end
+    local qLevel = (qMeta and SafeNum(qMeta.level)) or 0
+    if qLevel <= 0 and qid and qid > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+        local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+        if ok and SafeNum(dLvl) and dLvl > 0 then
+            qLevel = dLvl
+        end
+    end
+
+    local r, g, b = GetDifficultyColor(qLevel, qid)
+    local hex = string.format("%02x%02x%02x", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+
+    local function ColorizeFontString(fs)
+        if not fs or type(fs.GetText) ~= "function" then return end
+        local ok, txt = pcall(fs.GetText, fs)
+        if not ok or not txt or txt == "" then return end
+
+        local clean = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        pcall(fs.SetText, fs, "|cff" .. hex .. clean .. "|r")
+        if fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, r, g, b)
+        end
+    end
+
+    if block.HeaderText then
+        ColorizeFontString(block.HeaderText)
+    end
+    if block.HeaderButton and block.HeaderButton.GetFontString then
+        ColorizeFontString(block.HeaderButton:GetFontString())
     end
 end
 
@@ -818,10 +859,30 @@ function FQL:SetTrackerScale(scale)
     end
 end
 
+function FQL:SetTrackerFontScale(scale)
+    scale = tonumber(scale) or 1.0
+    if scale < 0.80 then scale = 0.80 end
+    if scale > 1.60 then scale = 1.60 end
+    scale = math.floor(scale * 100 + 0.5) / 100
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.trackerFontScale = scale
+    end
+    if _G.ObjectiveTrackerFrame then self:ApplyTrackerStyle(_G.ObjectiveTrackerFrame) end
+    if _G.QuestObjectiveTracker then self:ApplyTrackerStyle(_G.QuestObjectiveTracker) end
+    if _G.CampaignQuestObjectiveTracker then self:ApplyTrackerStyle(_G.CampaignQuestObjectiveTracker) end
+    self:RefreshObjectiveTracker()
+    if self.optionsPanel and self.optionsPanel.RefreshControls then
+        self.optionsPanel:RefreshControls()
+    end
+end
+
 function FQL:SetTrackerFont(fontID)
     if shupazForeverQuestLogDB then
         shupazForeverQuestLogDB.trackerFont = fontID or "DEFAULT"
     end
+    if _G.ObjectiveTrackerFrame then self:ApplyTrackerStyle(_G.ObjectiveTrackerFrame) end
+    if _G.QuestObjectiveTracker then self:ApplyTrackerStyle(_G.QuestObjectiveTracker) end
+    if _G.CampaignQuestObjectiveTracker then self:ApplyTrackerStyle(_G.CampaignQuestObjectiveTracker) end
     self:RefreshObjectiveTracker()
     if self.optionsPanel and self.optionsPanel.RefreshControls then
         self.optionsPanel:RefreshControls()
@@ -1283,6 +1344,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
             grp.completeCount = grp.completeCount + 1
         end
         grp.entries[#grp.entries + 1] = entry
+        ApplyBlockHeaderColor(entry.block, qid, qMeta)
         AttachTrackerMouseWheel(entry.block, tracker)
         if entry.block and entry.block.HeaderButton then
             AttachTrackerMouseWheel(entry.block.HeaderButton, tracker)

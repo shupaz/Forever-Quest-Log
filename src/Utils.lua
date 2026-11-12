@@ -22,11 +22,13 @@ local DB_DEFAULTS = {
     hideMapQuestLog = true,
     showQuestLevels = true,
     showTooltips = true,
+    questLogFontScale = 1.0,
     trackerByZone = true,
     trackerCurrentZoneFirst = true,
     trackerShowZoneCount = true,
     trackerScale = 1.0,
     trackerFont = "DEFAULT",
+    trackerFontScale = 1.0,
 }
 FQL.DB_DEFAULTS = DB_DEFAULTS
 
@@ -365,45 +367,65 @@ local function GetLogEntryInfo(index)
     if C_QuestLog and C_QuestLog.GetInfo then
         local ok, info = pcall(C_QuestLog.GetInfo, index)
         if ok and type(info) == "table" then
+            local qid = SafeNum(info.questID) or 0
+            local lvl = SafeNum(info.difficultyLevel) or 0
+            if lvl <= 0 then
+                lvl = SafeNum(info.level) or 0
+            end
+            if lvl <= 0 and qid > 0 and C_QuestLog.GetQuestDifficultyLevel then
+                local ok2, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+                if ok2 and SafeNum(dLvl) and dLvl > 0 then
+                    lvl = dLvl
+                end
+            end
             return {
                 logIndex = index,
                 title = SafeStr(info.title) or "Unknown",
-                level = SafeNum(info.level) or 0,
+                level = lvl,
                 suggestedGroup = SafeNum(info.suggestedGroup) or 0,
                 isHeader = info.isHeader == true,
                 isCollapsed = info.isCollapsed == true,
                 isComplete = info.isComplete,
                 frequency = SafeNum(info.frequency),
-                questID = SafeNum(info.questID) or 0,
+                questID = qid,
                 isOnMap = info.isOnMap == true,
                 hasLocalPOI = info.hasLocalPOI == true,
                 isTask = info.isTask == true,
                 isBounty = info.isBounty == true,
                 isHidden = info.isHidden == true,
                 isScaling = info.isScaling == true,
-                difficultyLevel = SafeNum(info.difficultyLevel),
+                difficultyLevel = SafeNum(info.difficultyLevel) or lvl,
             }
         end
     end
     if GetQuestLogTitle then
         local ok, title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, _, _, isOnMap, hasLocalPOI, isTask, isBounty, _, isHidden, isScaling = pcall(GetQuestLogTitle, index)
         if ok and SafeStr(title) then
+            local qid = SafeNum(questID) or 0
+            local lvl = SafeNum(level) or 0
+            if lvl <= 0 and qid > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+                local ok2, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+                if ok2 and SafeNum(dLvl) and dLvl > 0 then
+                    lvl = dLvl
+                end
+            end
             return {
                 logIndex = index,
                 title = title,
-                level = SafeNum(level) or 0,
+                level = lvl,
                 suggestedGroup = SafeNum(suggestedGroup) or 0,
                 isHeader = isHeader == true or isHeader == 1,
                 isCollapsed = isCollapsed == true or isCollapsed == 1,
                 isComplete = SafeNum(isComplete),
                 frequency = SafeNum(frequency),
-                questID = SafeNum(questID) or 0,
+                questID = qid,
                 isOnMap = isOnMap == true or isOnMap == 1,
                 hasLocalPOI = hasLocalPOI == true or hasLocalPOI == 1,
                 isTask = isTask == true or isTask == 1,
                 isBounty = isBounty == true or isBounty == 1,
                 isHidden = isHidden == true or isHidden == 1,
                 isScaling = isScaling == true or isScaling == 1,
+                difficultyLevel = lvl,
             }
         end
     end
@@ -584,18 +606,85 @@ local function GetQuestTagDetails(questID, info)
     return tagName, tagAbbr
 end
 
-local function GetDifficultyColor(level)
+local function GetDifficultyColor(level, questID)
     level = SafeNum(level) or 0
-    if level <= 0 and UnitLevel then
-        level = SafeNum(UnitLevel("player")) or 1
+    if level <= 0 and questID and questID > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+        local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, questID)
+        if ok and SafeNum(dLvl) and dLvl > 0 then
+            level = dLvl
+        end
     end
-    if GetQuestDifficultyColor then
+
+    local playerLevel = UnitLevel and SafeNum(UnitLevel("player")) or 1
+    if playerLevel <= 0 then playerLevel = 1 end
+
+    -- 1. Try native GetQuestDifficultyColor(level)
+    if GetQuestDifficultyColor and level > 0 then
         local ok, c = pcall(GetQuestDifficultyColor, level)
-        if ok and type(c) == "table" and c.r then
+        if ok and type(c) == "table" and c.r and c.g and c.b then
             return c.r, c.g, c.b
         end
     end
-    return 1.0, 0.82, 0.0
+
+    -- 2. Try C_PlayerInfo.GetContentDifficultyQuestForPlayer(questID)
+    if questID and questID > 0 and C_PlayerInfo and C_PlayerInfo.GetContentDifficultyQuestForPlayer then
+        local ok, diff = pcall(C_PlayerInfo.GetContentDifficultyQuestForPlayer, questID)
+        if ok and diff and _G.GetDifficultyColor then
+            local ok2, c = pcall(_G.GetDifficultyColor, diff)
+            if ok2 and type(c) == "table" and c.r and c.g and c.b then
+                return c.r, c.g, c.b
+            end
+        end
+    end
+
+    if level <= 0 then
+        return 1.0, 0.82, 0.18
+    end
+
+    -- 3. Robust Classic / Modern level-differential calculation
+    local levelDiff = level - playerLevel
+
+    -- Determine trivial (grey) range
+    local greyRange = 5
+    if UnitQuestTrivialLevelRangeScaling then
+        local ok, gr = pcall(UnitQuestTrivialLevelRangeScaling, "player")
+        if ok and SafeNum(gr) and gr > 0 then
+            greyRange = gr
+        end
+    elseif GetQuestGreenRange then
+        local ok, gr = pcall(GetQuestGreenRange, playerLevel)
+        if ok and SafeNum(gr) and gr > 0 then
+            greyRange = gr
+        end
+    else
+        if playerLevel <= 5 then
+            greyRange = 2
+        elseif playerLevel <= 39 then
+            greyRange = math.floor(playerLevel / 10) + 3
+        elseif playerLevel <= 59 then
+            greyRange = math.floor(playerLevel / 5) - 1
+        else
+            greyRange = 9
+        end
+    end
+
+    local qdc = _G.QuestDifficultyColors
+    if levelDiff >= 5 then
+        if qdc and qdc["impossible"] then return qdc["impossible"].r, qdc["impossible"].g, qdc["impossible"].b end
+        return 1.00, 0.20, 0.20 -- Red (Impossible / Very Hard)
+    elseif levelDiff >= 3 then
+        if qdc and qdc["verydifficult"] then return qdc["verydifficult"].r, qdc["verydifficult"].g, qdc["verydifficult"].b end
+        return 1.00, 0.50, 0.25 -- Orange (Hard)
+    elseif levelDiff >= -2 then
+        if qdc and qdc["difficult"] then return qdc["difficult"].r, qdc["difficult"].g, qdc["difficult"].b end
+        return 1.00, 0.82, 0.18 -- Yellow (Normal)
+    elseif -levelDiff <= greyRange then
+        if qdc and qdc["standard"] then return qdc["standard"].r, qdc["standard"].g, qdc["standard"].b end
+        return 0.25, 0.85, 0.25 -- Green (Easy)
+    else
+        if qdc and qdc["trivial"] then return qdc["trivial"].r, qdc["trivial"].g, qdc["trivial"].b end
+        return 0.60, 0.60, 0.60 -- Grey (Trivial)
+    end
 end
 
 local function GetQuestTextAndObjectives(questID, logIndex)

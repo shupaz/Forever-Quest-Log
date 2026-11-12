@@ -416,6 +416,45 @@ function FQL:SetScale(scale)
     end
 end
 
+local QL_FontCache = setmetatable({}, { __mode = "k" })
+
+local function ApplyScaledFont(fs, defaultFont, defaultSize, defaultFlags)
+    if not fs or type(fs.GetFont) ~= "function" or type(fs.SetFont) ~= "function" then return end
+    local ok, curFont, curSize, curFlags = pcall(fs.GetFont, fs)
+    if not ok then return end
+    local cached = QL_FontCache[fs]
+    if not cached then
+        local sz = SafeNum(curSize) or defaultSize or 12
+        if sz <= 0 then sz = defaultSize or 12 end
+        cached = {
+            font = SafeStr(curFont) or defaultFont or (STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"),
+            size = sz,
+            flags = SafeStr(curFlags) or defaultFlags or "",
+        }
+        QL_FontCache[fs] = cached
+    end
+    local scale = (shupazForeverQuestLogDB and SafeNum(shupazForeverQuestLogDB.questLogFontScale)) or 1.0
+    if scale < 0.5 then scale = 0.5 elseif scale > 2.5 then scale = 2.5 end
+    local targetSize = math.max(8, math.floor(cached.size * scale + 0.5))
+    if curFont ~= cached.font or curSize ~= targetSize then
+        pcall(fs.SetFont, fs, cached.font, targetSize, cached.flags)
+    end
+end
+
+function FQL:SetQuestLogFontScale(scale)
+    scale = tonumber(scale) or 1.0
+    if scale < 0.80 then scale = 0.80 end
+    if scale > 1.60 then scale = 1.60 end
+    scale = math.floor(scale * 100 + 0.5) / 100
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.questLogFontScale = scale
+    end
+    self:Refresh()
+    if self.optionsPanel and self.optionsPanel.RefreshControls then
+        self.optionsPanel:RefreshControls()
+    end
+end
+
 function FQL:SavePosition()
     if not self.frame then return end
     local point, _, relPoint, x, y = self.frame:GetPoint(1)
@@ -1512,18 +1551,17 @@ local function AcquireListRow(frame, index)
 
     row.trackCheck = row:CreateTexture(nil, "OVERLAY")
     row.trackCheck:SetSize(14, 14)
-    row.trackCheck:SetPoint("RIGHT", -4, 0)
+    row.trackCheck:SetPoint("TOPRIGHT", -4, -4)
     row.trackCheck:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
 
     row.statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.statusText:SetPoint("RIGHT", row.trackCheck, "LEFT", -2, 0)
+    row.statusText:SetPoint("TOPRIGHT", row.trackCheck, "TOPLEFT", -2, 0)
     row.statusText:SetJustifyH("RIGHT")
 
     row.titleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.titleText:SetPoint("LEFT", 20, 0)
-    row.titleText:SetPoint("RIGHT", row.statusText, "LEFT", -4, 0)
+    row.titleText:SetPoint("TOPLEFT", 12, -4)
     row.titleText:SetJustifyH("LEFT")
-    row.titleText:SetWordWrap(false)
+    row.titleText:SetWordWrap(true)
 
     row:SetScript("OnClick", function(self, button)
         if self.isHeader then
@@ -1579,7 +1617,7 @@ local function AcquireListRow(frame, index)
         if shupazForeverQuestLogDB and shupazForeverQuestLogDB.showTooltips == false then return end
         local q = self.questEntry
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local r, g, b = GetDifficultyColor(q.level)
+        local r, g, b = GetDifficultyColor(q.level, q.questID)
         GameTooltip:SetText(q.title, r, g, b)
         local tagStr = q.tagName and (" (" .. q.tagName .. ")") or ""
         GameTooltip:AddLine("Level " .. tostring(q.level or "?") .. tagStr .. (q.headerTitle and (" - " .. q.headerTitle) or ""), 0.85, 0.82, 0.72)
@@ -1637,6 +1675,13 @@ function FQL:BuildStructuredLog()
                     sections[#sections + 1] = currentSection
                 end
                 info.headerTitle = currentSection.title
+                if (not info.level or info.level <= 0) and info.questID and info.questID > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+                    local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, info.questID)
+                    if ok and SafeNum(dLvl) and dLvl > 0 then
+                        info.level = dLvl
+                        info.difficultyLevel = dLvl
+                    end
+                end
                 info.completeState = IsQuestCompleteOrFailed(info.questID, info.isComplete)
                 info.tagName, info.tagAbbr = GetQuestTagDetails(info.questID, info)
                 currentSection.quests[#currentSection.quests + 1] = info
@@ -1762,6 +1807,9 @@ function FQL:RefreshQuestList()
     self.allQuestsByID = allQuestsByID
 
     local maxQuests = GetMaxQuests()
+    if frame.countText then
+        ApplyScaledFont(frame.countText)
+    end
     if numQuests >= maxQuests then
         frame.countText:SetFormattedText("Quests: |cffff4444%d/%d|r", numQuests, maxQuests)
     else
@@ -1822,15 +1870,27 @@ function FQL:RefreshQuestList()
 
             hRow.bg:SetColorTexture(0.18, 0.13, 0.07, 0.85)
             hRow.bg:Show()
+            hRow.collapseIcon:ClearAllPoints()
+            hRow.collapseIcon:SetPoint("LEFT", 4, 0)
             hRow.collapseIcon:SetTexture(isSecCollapsed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
             hRow.collapseIcon:Show()
             hRow.trackCheck:Hide()
+            hRow.statusText:ClearAllPoints()
+            hRow.statusText:SetPoint("RIGHT", -6, 0)
+            ApplyScaledFont(hRow.statusText)
             hRow.statusText:SetText("|cffb8a582(" .. tostring(#matchingQuests) .. ")|r")
+            hRow.titleText:ClearAllPoints()
             hRow.titleText:SetPoint("LEFT", 22, 0)
+            hRow.titleText:SetPoint("RIGHT", hRow.statusText, "LEFT", -4, 0)
+            hRow.titleText:SetWordWrap(false)
+            ApplyScaledFont(hRow.titleText)
             hRow.titleText:SetText(sec.title)
             hRow.titleText:SetTextColor(1.0, 0.82, 0.18)
+            local hStringHeight = math.ceil(hRow.titleText:GetStringHeight() or 14)
+            local hRowHeight = math.max(22, hStringHeight + 6)
+            hRow:SetHeight(hRowHeight)
             hRow:Show()
-            yOffset = yOffset + 23
+            yOffset = yOffset + hRowHeight + 1
 
             -- Quest Rows inside Section
             if not isSecCollapsed then
@@ -1847,7 +1907,7 @@ function FQL:RefreshQuestList()
                     local isSelected = (q.questID == self.selectedQuestID)
                     local watched = IsQuestWatchedByID(q.questID, q.logIndex)
                     local superTracked = IsQuestSuperTracked(q.questID)
-                    local r, g, b = GetDifficultyColor(q.level)
+                    local r, g, b = GetDifficultyColor(q.level, q.questID)
 
                     if isSelected then
                         qRow.bg:SetColorTexture(0.55, 0.42, 0.16, 0.48)
@@ -1860,16 +1920,23 @@ function FQL:RefreshQuestList()
                     qRow.collapseIcon:Hide()
 
                     if watched then
+                        qRow.trackCheck:ClearAllPoints()
+                        qRow.trackCheck:SetPoint("TOPRIGHT", qRow, "TOPRIGHT", -4, -4)
                         qRow.trackCheck:Show()
                         if superTracked then
                             qRow.trackCheck:SetVertexColor(1.0, 0.85, 0.2)
                         else
                             qRow.trackCheck:SetVertexColor(0.85, 0.85, 0.85)
                         end
+                        qRow.statusText:ClearAllPoints()
+                        qRow.statusText:SetPoint("TOPRIGHT", qRow.trackCheck, "TOPLEFT", -2, 0)
                     else
                         qRow.trackCheck:Hide()
+                        qRow.statusText:ClearAllPoints()
+                        qRow.statusText:SetPoint("TOPRIGHT", qRow, "TOPRIGHT", -4, -4)
                     end
 
+                    ApplyScaledFont(qRow.statusText)
                     if q.completeState == 1 then
                         qRow.statusText:SetText("|cff40ff40(" .. (COMPLETE or "Complete") .. ")|r")
                     elseif q.completeState == -1 then
@@ -1884,16 +1951,32 @@ function FQL:RefreshQuestList()
                         prefix = "[" .. lvlStr .. (q.tagAbbr or "") .. "] "
                     end
 
-                    qRow.titleText:SetPoint("LEFT", 12, 0)
-                    qRow.titleText:SetText(prefix .. q.title)
-                    if isSelected then
-                        qRow.titleText:SetTextColor(1.0, 1.0, 1.0)
-                    else
-                        qRow.titleText:SetTextColor(r, g, b)
+                    local rightPad = 6
+                    if watched then
+                        rightPad = 22
+                    end
+                    local statusTextStr = qRow.statusText:GetText()
+                    if statusTextStr and statusTextStr ~= "" then
+                        local sWidth = qRow.statusText:GetStringWidth() or 0
+                        rightPad = rightPad + sWidth + 4
                     end
 
+                    local availWidth = math.max(120, rowWidth - 12 - rightPad)
+
+                    qRow.titleText:ClearAllPoints()
+                    qRow.titleText:SetPoint("TOPLEFT", qRow, "TOPLEFT", 12, -4)
+                    qRow.titleText:SetWidth(availWidth)
+                    qRow.titleText:SetWordWrap(true)
+                    ApplyScaledFont(qRow.titleText)
+                    qRow.titleText:SetText(prefix .. q.title)
+                    qRow.titleText:SetTextColor(r, g, b)
+
+                    local stringHeight = math.ceil(qRow.titleText:GetStringHeight() or 14)
+                    local rowHeight = math.max(22, stringHeight + 8)
+                    qRow:SetHeight(rowHeight)
+
                     qRow:Show()
-                    yOffset = yOffset + 22
+                    yOffset = yOffset + rowHeight
                 end
             end
 
@@ -1906,6 +1989,9 @@ function FQL:RefreshQuestList()
     end
 
     frame.collapseAllBtn.icon:SetTexture(anyExpanded and "Interface\\Buttons\\UI-MinusButton-Up" or "Interface\\Buttons\\UI-PlusButton-Up")
+    if frame.emptyListText then
+        ApplyScaledFont(frame.emptyListText)
+    end
     frame.emptyListText:SetShown(rowIndex == 0)
     frame.listContent:SetHeight(math.max(1, yOffset))
 
@@ -1932,6 +2018,7 @@ function FQL:RefreshQuestDetail()
         self.selectedQuestTitle = nil
         self.selectedQuestLevel = nil
         frame.detailScroll:Hide()
+        ApplyScaledFont(frame.noSelectionText)
         frame.noSelectionText:Show()
         frame.abandonBtn:Disable()
         frame.shareBtn:Disable()
@@ -1972,6 +2059,19 @@ function FQL:RefreshQuestDetail()
     if contentWidth < 260 then contentWidth = 326 end
     frame.detailContent:SetWidth(contentWidth)
 
+    ApplyScaledFont(frame.detailTitle)
+    ApplyScaledFont(frame.detailMeta)
+    ApplyScaledFont(frame.detailObjSummary)
+    ApplyScaledFont(frame.detailObjLines)
+    ApplyScaledFont(frame.detailDescHeader)
+    ApplyScaledFont(frame.detailDescText)
+    ApplyScaledFont(frame.detailRewardsHeader)
+    ApplyScaledFont(frame.detailChoiceLabel)
+    ApplyScaledFont(frame.detailFixedLabel)
+    ApplyScaledFont(frame.detailSpellLabel)
+    ApplyScaledFont(frame.detailXPLine)
+    ApplyScaledFont(frame.detailMoneyLine)
+
     local objSummary, descText, objectives = GetQuestTextAndObjectives(questID, logIndex)
     local rewards = GetQuestRewardsData(questID, logIndex)
 
@@ -2006,8 +2106,13 @@ function FQL:RefreshQuestDetail()
     frame.detailTitle:ClearAllPoints()
     frame.detailTitle:SetPoint("TOPLEFT", frame.detailContent, "TOPLEFT", 0, -y)
     frame.detailTitle:SetWidth(contentWidth - titleRightPad)
+    frame.detailTitle:SetWordWrap(true)
     frame.detailTitle:SetText(qEntry.title)
     frame.detailTitle:Show()
+    if frame.detailTitleBtn then
+        frame.detailTitleBtn:ClearAllPoints()
+        frame.detailTitleBtn:SetAllPoints(frame.detailTitle)
+    end
     y = y + (frame.detailTitle:GetStringHeight() or 22) + 4
 
     -- Metadata line (Level, Tag, Group, Status)
@@ -2135,6 +2240,7 @@ function FQL:RefreshQuestDetail()
                 local qr, qg, qb = GetItemQualityColor(qual)
                 if qr then r, g, b = qr, qg, qb end
             end
+            ApplyScaledFont(btn.name)
             btn.name:SetText(item.name)
             btn.name:SetTextColor(r, g, b)
 
