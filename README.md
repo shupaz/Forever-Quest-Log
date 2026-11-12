@@ -20,7 +20,7 @@
 ### 📜 Classic Dual-Pane Quest Log
 - **Standalone & Movable**: Sits cleanly on your screen without obstructing the World Map. Drag anywhere or let it intelligently dock side-by-side with Blizzard windows (Character Info, Spellbook, Professions, etc.).
 - **Dual-Pane Layout**:
-  - **Left Pane**: Collapsible zone headers with quest counts, colored difficulty levels (`[Level] Quest Title`), and completion statuses.
+  - **Left Pane**: Collapsible zone headers with quest counts, dynamic multi-line wrapping for long quest titles, difficulty-colored quest titles and level tags (`[Level] Quest Title` in Red, Orange, Yellow, Green, or Grey with real-time `PLAYER_LEVEL_UP` updates), and completion statuses.
   - **Right Pane**: Rich quest descriptions, objectives, material requirements, XP, gold, and reward item previews.
 - **Track All / Untrack All**: One-click button that dynamically tracks all active quests or clears all tracking.
 - **Double-Click to Show Map**: Double-click any quest in the list to open the small (windowed) World Map directly to that quest's zone side-by-side with the Quest Log.
@@ -45,8 +45,9 @@
 ---
 
 ### 🎨 Customization & Modern Integration
-- **Custom Fonts**: Dynamically discovers all fonts active in your WoW client (`GetFonts()`) plus any fonts registered via **LibSharedMedia-3.0**, with mousewheel scrolling support.
-- **Independent Scaling**: Configure Quest Log scale and Objective Tracker scale separately (60% to 160%).
+- **Native Blizzard Settings UI**: Built on Blizzard's `SettingsListTemplate` with authentic section headers, hover highlights, diamond slider tracks with steppers, native dropdowns, and a one-click **Defaults** reset button.
+- **Custom Fonts & Independent Font Scaling**: Dynamically discovers all fonts active in your WoW client (`GetFonts()`) plus any fonts registered via **LibSharedMedia-3.0**, paired with independent **Font Size** sliders (`80%` to `160%`) for both the Quest Log Window and the Objective Tracker.
+- **Independent Window & Tracker Scaling**: Configure Quest Log window scale and Objective Tracker scale separately (`60%` to `160%`).
 - **World Map Decoupling**: Completely suppresses the embedded World Map quest panel, opens the World Map in its small (windowed) view side-by-side when clicking **Show Map**, and redirects the Micro Menu Quest button directly to the standalone Quest Log.
 - **Minimap Addon Compartment**: Left-click to toggle the Quest Log, right-click to instantly open settings.
 - **Native Keybinding Integration**: Automatically uses your configured **Toggle Quest Log** keybind (default **L**).
@@ -85,21 +86,23 @@ Access the settings panel via:
 - Or typing `/fql options` in chat.
 
 ### Settings Include:
-- **Standalone Quest Log Window**:
-  - **Window Scale** slider (`60%` to `160%`) and **Default Position** button.
-  - **Wowhead URL Bar** placement selector (**Top | Bottom | Hidden**, default **Hidden**).
+- **Quest Log Window**:
+  - **Window Scale** slider (`60%` to `160%`).
+  - **Font Size** slider (`80%` to `160%`).
+  - **Wowhead URL Bar** dropdown (**Top | Bottom | Hidden**, default **Hidden**).
   - **Show Quest Levels & Type Tags** (`[60D]`, `[60G]`, `[60R]`).
   - **Show Quest Row Hover Tooltips**.
   - **Lock to Default UIPanel Placement** (auto-dock beside narrow Blizzard panels and small World Map; uncheck to drag freely).
-- **World Map Integration**:
-  - **Remove Embedded Quest Log from World Map**.
 - **Objective Tracker**:
   - **Tracker Scale** slider (`60%` to `160%`).
-  - **Tracker Font** dropdown (dynamically discovers installed client fonts + `LibSharedMedia-3.0`, with mousewheel cycling/scrolling).
+  - **Font Size** slider (`80%` to `160%`).
+  - **Tracker Font** dropdown (dynamically discovers installed client fonts + `LibSharedMedia-3.0`).
   - **Group & Collapse Quests by Zone in Objective Tracker**.
   - **Prioritize Current Player Zone at Top of Tracker**.
   - **Show Active Quest Count on Tracker Zone Headers** (`(x/y)`).
-  - Quick actions: **Expand Tracker Zones**, **Collapse Tracker Zones**, and **Expand Quest Log Zones**.
+- **World Map**:
+  - **Remove Embedded Quest Log from World Map**.
+- **Defaults Button**: Native top-right **Defaults** button resets all settings and window placement to defaults (same as `/fql reset`).
 
 ---
 

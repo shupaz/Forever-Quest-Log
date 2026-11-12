@@ -22,14 +22,14 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
-## [v1.0.3] - 2026-04-19
+## [v1.0.3] - 2026-11-10
 
 ### Fixed
 - **Full 25-Quest Objective Tracker Capacity**: Restored the unlimited height budget pass (`ForceUnlimitedTrackerHeight` / `NeedsFullHeightRetry`) using the zero-taint `TState` table so `QuestObjectiveTracker` builds blocks for all tracked quests (up to 25) instead of truncating after ~14 quests when screen `availableHeight` is reached.
 
 ---
 
-## [v1.0.2] - 2026-04-19
+## [v1.0.2] - 2026-11-09
 
 ### Added
 - **Dedicated Copyable Wowhead URL Bar**: Added a full-width, high-contrast Wowhead URL bar (`Wowhead URL: https://www.wowhead.com/forever/quest=...`) with auto-highlight on hover/click and instant `Ctrl+C` copying.
@@ -57,7 +57,7 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
-## [v1.0.1] - 2026-04-19
+## [v1.0.1] - 2026-11-08
 
 ### Changed
 - Refactored the addon into a modular multi-file architecture under `src/` (`Init.lua`, `Utils.lua`, `Hooks.lua`, `QuestLog.lua`, `Tracker.lua`, `Options.lua`).
@@ -67,7 +67,7 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
-## [v1.0.0] - 2026-04-19
+## [v1.0.0] - 2026-11-06
 
 ### Added
 - **Standalone Classic Dual-Pane Quest Log Window**:
