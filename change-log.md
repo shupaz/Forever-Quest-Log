@@ -4,6 +4,15 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.5] - 2026-11-13
+
+### Fixed
+- **Quest Difficulty Color Calculation**: Bypassed Dragonflight retail content-scaling APIs (`GetQuestDifficultyColor` and `C_PlayerInfo`) that were overriding quest colors with uniform yellow/white. Quests in both the Quest Log and Objective Tracker now accurately compute their true Classic 5-tier difficulty colors relative to player level (Red, Orange, Yellow, Green, Grey).
+- **Persistent Quest Title Colors on Mouseover**: Applied inline hex color formatting to Quest Log title FontStrings alongside `SetTextColor` so that button hover highlights and font object resets cannot clear difficulty colors back to default gold.
+- **Tracker Zone Metadata & Standalone Coloring**: Ensured `level` and `difficultyLevel` are stored in the tracker zone lookup table, and enabled block header difficulty color coding even when **Group Quests by Zone** is disabled.
+
+---
+
 ## [v1.0.4] - 2026-11-12
 
 ### Added

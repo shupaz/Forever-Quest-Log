@@ -97,7 +97,8 @@ function FQL:GetQuestZoneLookup()
                     questOrder = i,
                     completeState = IsQuestCompleteOrFailed(info.questID, info.isComplete),
                     title = info.title,
-                    level = info.level,
+                    level = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0,
+                    difficultyLevel = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0,
                 }
             end
         end
@@ -765,11 +766,22 @@ end
 
 local function ApplyBlockHeaderColor(block, qid, qMeta)
     if not block or not GetDifficultyColor then return end
-    local qLevel = (qMeta and SafeNum(qMeta.level)) or 0
-    if qLevel <= 0 and qid and qid > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
-        local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
-        if ok and SafeNum(dLvl) and dLvl > 0 then
-            qLevel = dLvl
+    local qLevel = (qMeta and (SafeNum(qMeta.difficultyLevel) or SafeNum(qMeta.level))) or 0
+    if qLevel <= 0 and qid and qid > 0 then
+        if C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+            local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+            if ok and SafeNum(dLvl) and dLvl > 0 then
+                qLevel = dLvl
+            end
+        end
+        if qLevel <= 0 and C_QuestLog and C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetInfo then
+            local ok, idx = pcall(C_QuestLog.GetLogIndexForQuestID, qid)
+            if ok and SafeNum(idx) and idx > 0 then
+                local ok2, info = pcall(C_QuestLog.GetInfo, idx)
+                if ok2 and type(info) == "table" then
+                    qLevel = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0
+                end
+            end
         end
     end
 
@@ -1261,6 +1273,17 @@ function FQL:ApplyTrackerZoneLayout(tracker)
                     if CanChangeFrame(child) then child:Show() end
                 end
             end
+        end
+        local questToZone = self:GetQuestZoneLookup()
+        local titleToQuestID = {}
+        for qid, data in pairs(questToZone) do
+            if data.title then
+                titleToQuestID[data.title] = qid
+            end
+        end
+        local questBlocks = CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQuestID)
+        for _, entry in ipairs(questBlocks) do
+            ApplyBlockHeaderColor(entry.block, entry.questID, questToZone[entry.questID])
         end
         return
     end

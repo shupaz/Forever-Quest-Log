@@ -5,7 +5,7 @@ end
 _G.shupaz_ForeverQuestLog = FQL
 
 FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.4"
+FQL.VERSION = "1.0.5"
 
 local MIN_SCALE, MAX_SCALE = 0.6, 1.6
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
@@ -608,40 +608,32 @@ end
 
 local function GetDifficultyColor(level, questID)
     level = SafeNum(level) or 0
-    if level <= 0 and questID and questID > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
-        local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, questID)
-        if ok and SafeNum(dLvl) and dLvl > 0 then
-            level = dLvl
+    if level <= 0 and questID and questID > 0 then
+        if C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+            local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, questID)
+            if ok and SafeNum(dLvl) and dLvl > 0 then
+                level = dLvl
+            end
+        end
+        if level <= 0 and C_QuestLog and C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetInfo then
+            local ok, idx = pcall(C_QuestLog.GetLogIndexForQuestID, questID)
+            if ok and SafeNum(idx) and idx > 0 then
+                local ok2, info = pcall(C_QuestLog.GetInfo, idx)
+                if ok2 and type(info) == "table" then
+                    level = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0
+                end
+            end
         end
     end
 
     local playerLevel = UnitLevel and SafeNum(UnitLevel("player")) or 1
     if playerLevel <= 0 then playerLevel = 1 end
 
-    -- 1. Try native GetQuestDifficultyColor(level)
-    if GetQuestDifficultyColor and level > 0 then
-        local ok, c = pcall(GetQuestDifficultyColor, level)
-        if ok and type(c) == "table" and c.r and c.g and c.b then
-            return c.r, c.g, c.b
-        end
-    end
-
-    -- 2. Try C_PlayerInfo.GetContentDifficultyQuestForPlayer(questID)
-    if questID and questID > 0 and C_PlayerInfo and C_PlayerInfo.GetContentDifficultyQuestForPlayer then
-        local ok, diff = pcall(C_PlayerInfo.GetContentDifficultyQuestForPlayer, questID)
-        if ok and diff and _G.GetDifficultyColor then
-            local ok2, c = pcall(_G.GetDifficultyColor, diff)
-            if ok2 and type(c) == "table" and c.r and c.g and c.b then
-                return c.r, c.g, c.b
-            end
-        end
-    end
-
     if level <= 0 then
         return 1.0, 0.82, 0.18
     end
 
-    -- 3. Robust Classic / Modern level-differential calculation
+    -- Robust Classic level-differential calculation
     local levelDiff = level - playerLevel
 
     -- Determine trivial (grey) range
