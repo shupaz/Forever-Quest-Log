@@ -4,6 +4,24 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.6] - 2026-11-14
+
+### Added
+- **Objective Tracker Grouping & Sorting Modes**: Replaced the binary zone-grouping checkbox with a 6-mode **Grouping & Sorting** dropdown (`trackerSortMode`) in AddOn Options and `/fql tracker` cycling:
+  - **Automatic**: Default zone grouping with **Current Zone First** priority and native quest order.
+  - **Group by Zone**: Collapsible zone headers sorted alphabetically (`A–Z`), with quests ordered by level inside each zone (supports **Current Zone First**).
+  - **Group by Completion Status**: Collapsible **Complete**, **In Progress**, and **Failed** headers, with quests ordered by level inside each group and full right-click group context menu support.
+  - **List by Level**: Flat list without group headers, ordered by quest level ascending (Low to High).
+  - **List by Level (High to Low)**: Flat list without group headers, ordered by quest level descending (High to Low).
+  - **List Alphabetically**: Flat list without group headers, ordered `A–Z` by quest title.
+- **Native Blizzard Dropdown Tooltip Formatting**: Styled the **Grouping & Sorting** tooltip with Blizzard's native white option labels (`|cffffffffLabel:|r`) and gold descriptions separated by paragraph spacing.
+
+### Changed
+- **Quest Log Always Grouped by Zone (A–Z) & Ordered by Level**: Updated `FQL:BuildStructuredLog()` so the standalone Quest Log always groups quests by zone header, sorts zone headers alphabetically (`A–Z`), and orders quests by level inside each zone.
+- **Dynamic "Current Zone First" Availability**: Linked **Current Zone First** to **Grouping & Sorting** so it is enabled only when **Automatic** or **Group by Zone** is selected, and automatically greyed out for all other modes.
+
+---
+
 ## [v1.0.5] - 2026-11-13
 
 ### Fixed

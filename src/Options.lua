@@ -33,9 +33,20 @@ function PageMixin:OnRefresh()
     self:Redisplay()
 end
 
+function PageMixin:UpdateControlStates()
+    if self:IsShown() and self.List and self.List.ScrollBox and self.List.ScrollBox.ForEachFrame then
+        pcall(self.List.ScrollBox.ForEachFrame, self.List.ScrollBox, function(frame)
+            if frame and frame.EvaluateState then
+                pcall(frame.EvaluateState, frame)
+            end
+        end)
+    end
+end
+
 function PageMixin:Redisplay()
     if self:IsShown() and self.List and self.layout then
         self.List:Display(self.layout:GetInitializers())
+        self:UpdateControlStates()
     end
 end
 
@@ -108,7 +119,7 @@ function FQL:CreateOptionsPanel()
                 local init = Settings.CreateCheckboxInitializer(setting, nil, tooltip)
                 page:AddInitializer(init)
                 regSettings[key] = setting
-                return setting
+                return setting, init
             end
 
             -- ========================================================
@@ -299,22 +310,69 @@ function FQL:CreateOptionsPanel()
             page:AddInitializer(fontInit)
             regSettings["trackerFont"] = fontSetting
 
-            -- Tracker Checkboxes
-            AddCheckbox(
-                "trackerByZone",
-                "FQL_TRACKER_BY_ZONE",
-                "Group Quests by Zone",
-                "Organizes tracked quests under collapsible [-]/[+] zone header buttons in the Objective Tracker.",
-                function() FQL:RefreshObjectiveTracker() end
+            -- Tracker Grouping & Sorting Dropdown
+            local function GetTrackerSortModeOptions()
+                local container = Settings.CreateControlTextContainer()
+                container:Add("AUTO", "Automatic")
+                container:Add("ZONE", "Group by Zone")
+                container:Add("COMPLETION", "Group by Completion Status")
+                container:Add("LEVEL", "List by Level")
+                container:Add("LEVEL_DESC", "List by Level (High to Low)")
+                container:Add("ALPHA", "List Alphabetically")
+                return container:GetData()
+            end
+            local sortModeSetting = Settings.RegisterAddOnSetting(
+                page.category,
+                "FQL_TRACKER_SORT_MODE",
+                "trackerSortMode",
+                shupazForeverQuestLogDB,
+                Settings.VarType.String,
+                "Grouping & Sorting",
+                DB_DEFAULTS.trackerSortMode or "AUTO"
             )
+            sortModeSetting:SetValueChangedCallback(function(_, val)
+                if FQL.SetTrackerSortMode then
+                    FQL:SetTrackerSortMode(val)
+                else
+                    FQL:RefreshObjectiveTracker()
+                end
+            end)
+            local sortModeTooltip = table.concat({
+                "|cffffffffAutomatic:|r Default zone grouping with Current Zone First support.",
+                "|cffffffffGroup by Zone:|r Zones sorted alphabetically (A-Z), quests ordered by level inside each zone.",
+                "|cffffffffGroup by Completion Status:|r Grouped into Complete and In Progress, ordered by level.",
+                "|cffffffffList by Level:|r No headers, quests ordered by level (Low to High).",
+                "|cffffffffList by Level (High to Low):|r No headers, quests ordered by level (High to Low).",
+                "|cffffffffList Alphabetically:|r No headers, quests ordered A-Z by title.",
+            }, "\n\n")
+            local sortModeInit = Settings.CreateDropdownInitializer(
+                sortModeSetting,
+                GetTrackerSortModeOptions,
+                sortModeTooltip
+            )
+            page:AddInitializer(sortModeInit)
+            regSettings["trackerSortMode"] = sortModeSetting
 
-            AddCheckbox(
+            -- Tracker Checkboxes
+            local function IsCurrentZoneFirstAvailable()
+                local mode = (FQL.GetTrackerSortMode and FQL:GetTrackerSortMode()) or (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerSortMode) or "AUTO"
+                return mode == "AUTO" or mode == "ZONE"
+            end
+
+            local _, curZoneFirstInit = AddCheckbox(
                 "trackerCurrentZoneFirst",
                 "FQL_TRACKER_CURRENT_ZONE_FIRST",
                 "Current Zone First",
-                "Automatically places the zone you are currently standing in at the top of the Objective Tracker.",
+                "Automatically places the zone you are currently standing in at the top of the Objective Tracker (available in Automatic and Group by Zone modes).",
                 function() FQL:RefreshObjectiveTracker() end
             )
+            if curZoneFirstInit then
+                if curZoneFirstInit.SetParentInitializer then
+                    pcall(curZoneFirstInit.SetParentInitializer, curZoneFirstInit, sortModeInit, IsCurrentZoneFirstAvailable)
+                elseif curZoneFirstInit.AddModifyPredicate then
+                    pcall(curZoneFirstInit.AddModifyPredicate, curZoneFirstInit, IsCurrentZoneFirstAvailable)
+                end
+            end
 
             AddCheckbox(
                 "trackerShowZoneCount",
@@ -413,6 +471,7 @@ function FQL:ResetToDefaults()
     if self.SetTrackerScale then self:SetTrackerScale(defaults.trackerScale or 1.0) end
     if self.SetTrackerFontScale then self:SetTrackerFontScale(defaults.trackerFontScale or 1.0) end
     if self.SetTrackerFont then self:SetTrackerFont(defaults.trackerFont or "DEFAULT") end
+    if self.SetTrackerSortMode then self:SetTrackerSortMode(defaults.trackerSortMode or "AUTO") end
     if self.SetWowheadBarPosition then self:SetWowheadBarPosition(defaults.wowheadBarPosition or "HIDE") end
 
     SuppressMapQuestLog()

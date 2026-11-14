@@ -233,12 +233,23 @@ function FQL:ToggleAllTrackerZones(activeZones)
     self:RefreshObjectiveTracker()
 end
 
-function FQL:UntrackZoneQuests(zoneName)
+function FQL:UntrackZoneQuests(zoneName, grpEntries)
     if not zoneName then return end
     local questToZone = self:GetQuestZoneLookup()
-    for questID, data in pairs(questToZone) do
-        if data.zone == zoneName and IsQuestWatchedByID(questID, data.logIndex) then
-            SetQuestWatchedByID(questID, data.logIndex, false)
+    if type(grpEntries) == "table" and #grpEntries > 0 then
+        for _, entry in ipairs(grpEntries) do
+            local qid = entry and entry.questID
+            local qData = qid and questToZone[qid]
+            local logIdx = qData and qData.logIndex
+            if qid and IsQuestWatchedByID(qid, logIdx) then
+                SetQuestWatchedByID(qid, logIdx, false)
+            end
+        end
+    else
+        for questID, data in pairs(questToZone) do
+            if data.zone == zoneName and IsQuestWatchedByID(questID, data.logIndex) then
+                SetQuestWatchedByID(questID, data.logIndex, false)
+            end
         end
     end
     if C_QuestLog and C_QuestLog.SortQuestWatches then
@@ -248,7 +259,7 @@ function FQL:UntrackZoneQuests(zoneName)
     self:RefreshObjectiveTracker(true)
 end
 
-function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
+function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName, grpEntries)
     if not zoneName then return end
     local menu = self.trackerContextMenu
     if not menu then
@@ -282,7 +293,7 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
             end,
         },
         {
-            label = "Collapse / Expand All Zones",
+            label = "Collapse / Expand All Groups",
             fn = function()
                 FQL:ToggleAllTrackerZones()
             end,
@@ -293,12 +304,23 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
                 if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.collapsedHeaders then
                     shupazForeverQuestLogCharDB.collapsedHeaders[zoneName] = nil
                 end
-                local questToZone = FQL:GetQuestZoneLookup()
                 local firstQID = nil
-                for qid, data in pairs(questToZone) do
-                    if data.zone == zoneName then
-                        firstQID = qid
-                        break
+                if type(grpEntries) == "table" and grpEntries[1] and grpEntries[1].questID then
+                    firstQID = grpEntries[1].questID
+                else
+                    local questToZone = FQL:GetQuestZoneLookup()
+                    local bestLevel = nil
+                    local bestTitle = nil
+                    for qid, data in pairs(questToZone) do
+                        if data.zone == zoneName then
+                            local lvl = SafeNum(data.level) or 0
+                            local ttl = (data.title or ""):lower()
+                            if not firstQID or lvl < bestLevel or (lvl == bestLevel and ttl < bestTitle) then
+                                firstQID = qid
+                                bestLevel = lvl
+                                bestTitle = ttl
+                            end
+                        end
                     end
                 end
                 if firstQID then
@@ -311,7 +333,7 @@ function FQL:ShowTrackerZoneContextMenu(anchorButton, zoneName)
         {
             label = "|cffff5555Untrack All in " .. zoneName .. "|r",
             fn = function()
-                FQL:UntrackZoneQuests(zoneName)
+                FQL:UntrackZoneQuests(zoneName, grpEntries)
             end,
         },
     }
@@ -447,7 +469,7 @@ local function AcquireTrackerZoneHeader(tracker, index)
         if not self.zoneName then return end
         PlayClickSound()
         if button == "RightButton" then
-            FQL:ShowTrackerZoneContextMenu(self, self.zoneName)
+            FQL:ShowTrackerZoneContextMenu(self, self.zoneName, self.grpEntries)
             return
         end
         if IsShiftKeyDown and IsShiftKeyDown() then
@@ -901,6 +923,43 @@ function FQL:SetTrackerFont(fontID)
     end
 end
 
+local VALID_TRACKER_SORT_MODES = {
+    AUTO = true,
+    ZONE = true,
+    COMPLETION = true,
+    LEVEL = true,
+    LEVEL_DESC = true,
+    ALPHA = true,
+}
+
+local function NormalizeSortMode(raw)
+    if type(raw) ~= "string" then return nil end
+    local s = SafeStr(raw)
+    if s and VALID_TRACKER_SORT_MODES[s] then return s end
+    for k in pairs(VALID_TRACKER_SORT_MODES) do
+        local ok, eq = pcall(function() return raw == k end)
+        if ok and eq then return k end
+    end
+    return nil
+end
+
+function FQL:GetTrackerSortMode()
+    local mode = shupazForeverQuestLogDB and NormalizeSortMode(shupazForeverQuestLogDB.trackerSortMode)
+    return mode or "AUTO"
+end
+
+function FQL:SetTrackerSortMode(mode)
+    mode = NormalizeSortMode(mode) or "AUTO"
+    if shupazForeverQuestLogDB then
+        shupazForeverQuestLogDB.trackerSortMode = mode
+        shupazForeverQuestLogDB.trackerByZone = true
+    end
+    self:RefreshObjectiveTracker()
+    if self.optionsPanel and self.optionsPanel.UpdateControlStates then
+        self.optionsPanel:UpdateControlStates()
+    end
+end
+
 local function GetMaxTrackerContentsHeight(tracker, contents)
     local container = _G.ObjectiveTrackerFrame
     local containerMax = nil
@@ -1315,9 +1374,18 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         return
     end
 
-    self:EnsureTrackerHeaderZoneButton(tracker)
-    if ts.headerZoneBtn then
-        ts.headerZoneBtn:Show()
+    local sortMode = self:GetTrackerSortMode()
+    local isFlatList = (sortMode == "LEVEL" or sortMode == "LEVEL_DESC" or sortMode == "ALPHA")
+
+    if isFlatList then
+        if ts.headerZoneBtn then
+            ts.headerZoneBtn:Hide()
+        end
+    else
+        self:EnsureTrackerHeaderZoneButton(tracker)
+        if ts.headerZoneBtn then
+            ts.headerZoneBtn:Show()
+        end
     end
 
     local defaultLeftOffset = 0
@@ -1343,30 +1411,67 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     local groupsByName = {}
     local orderedGroups = {}
     local currentPlayerZone = (GetRealZoneText and SafeStr(GetRealZoneText())) or (GetZoneText and SafeStr(GetZoneText())) or nil
-    local prioritizeCurrent = (not shupazForeverQuestLogDB) or (shupazForeverQuestLogDB.trackerCurrentZoneFirst ~= false)
+    local prioritizeCurrent = (sortMode == "AUTO" or sortMode == "ZONE") and ((not shupazForeverQuestLogDB) or (shupazForeverQuestLogDB.trackerCurrentZoneFirst ~= false))
     local showZoneCount = (not shupazForeverQuestLogDB) or (shupazForeverQuestLogDB.trackerShowZoneCount ~= false)
 
     for idx, entry in ipairs(questBlocks) do
         local qid = entry.questID
         local qMeta = questToZone[qid]
         local zName = self:ResolveQuestZoneName(qid, questToZone)
-        local grp = groupsByName[zName]
-        if not grp then
-            grp = {
-                zoneName = zName,
-                order = (prioritizeCurrent and zName == currentPlayerZone) and 0 or (zoneOrder[zName] or (1000 + idx)),
-                entries = {},
-                completeCount = 0,
-            }
-            groupsByName[zName] = grp
-            orderedGroups[#orderedGroups + 1] = grp
+
+        local qLevel = (qMeta and (SafeNum(qMeta.difficultyLevel) or SafeNum(qMeta.level))) or 0
+        if qLevel <= 0 and qid and qid > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
+            local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+            if ok and SafeNum(dLvl) and dLvl > 0 then
+                qLevel = dLvl
+            end
         end
+        entry.level = qLevel
+
+        local qTitle = (qMeta and SafeStr(qMeta.title)) or nil
+        if not qTitle and entry.block and entry.block.HeaderText and entry.block.HeaderText.GetText then
+            local ok, txt = pcall(entry.block.HeaderText.GetText, entry.block.HeaderText)
+            if ok and SafeStr(txt) then
+                qTitle = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            end
+        end
+        entry.title = qTitle or ""
         entry.questOrder = (qMeta and qMeta.questOrder) or idx
         entry.completeState = (qMeta and qMeta.completeState) or IsQuestCompleteOrFailed(qid, nil)
-        if entry.completeState == 1 then
-            grp.completeCount = grp.completeCount + 1
+
+        if not isFlatList then
+            local grpKey = zName
+            local grpOrder = (prioritizeCurrent and zName == currentPlayerZone) and 0 or (zoneOrder[zName] or (1000 + idx))
+            if sortMode == "COMPLETION" then
+                if entry.completeState == 1 then
+                    grpKey = COMPLETE or "Complete"
+                    grpOrder = 1
+                elseif entry.completeState == -1 then
+                    grpKey = FAILED or "Failed"
+                    grpOrder = 3
+                else
+                    grpKey = "In Progress"
+                    grpOrder = 2
+                end
+            end
+
+            local grp = groupsByName[grpKey]
+            if not grp then
+                grp = {
+                    zoneName = grpKey,
+                    order = grpOrder,
+                    entries = {},
+                    completeCount = 0,
+                }
+                groupsByName[grpKey] = grp
+                orderedGroups[#orderedGroups + 1] = grp
+            end
+            if entry.completeState == 1 then
+                grp.completeCount = grp.completeCount + 1
+            end
+            grp.entries[#grp.entries + 1] = entry
         end
-        grp.entries[#grp.entries + 1] = entry
+
         ApplyBlockHeaderColor(entry.block, qid, qMeta)
         AttachTrackerMouseWheel(entry.block, tracker)
         if entry.block and entry.block.HeaderButton then
@@ -1374,54 +1479,148 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         end
     end
 
-    table.sort(orderedGroups, function(a, b)
-        if a.order ~= b.order then
-            return a.order < b.order
+    local function SortEntriesByLevel(a, b)
+        local la = SafeNum(a.level) or 0
+        local lb = SafeNum(b.level) or 0
+        if la ~= lb then
+            return la < lb
         end
-        return a.zoneName < b.zoneName
-    end)
+        local ta = (a.title or ""):lower()
+        local tb = (b.title or ""):lower()
+        if ta ~= tb then
+            return ta < tb
+        end
+        return (a.questOrder or 0) < (b.questOrder or 0)
+    end
 
-    for _, grp in ipairs(orderedGroups) do
-        table.sort(grp.entries, function(a, b)
-            return (a.questOrder or 0) < (b.questOrder or 0)
-        end)
+    local function SortEntriesByLevelDesc(a, b)
+        local la = SafeNum(a.level) or 0
+        local lb = SafeNum(b.level) or 0
+        if la ~= lb then
+            return la > lb
+        end
+        local ta = (a.title or ""):lower()
+        local tb = (b.title or ""):lower()
+        if ta ~= tb then
+            return ta < tb
+        end
+        return (a.questOrder or 0) < (b.questOrder or 0)
+    end
+
+    local function SortEntriesAlphabetically(a, b)
+        local ta = (a.title or ""):lower()
+        local tb = (b.title or ""):lower()
+        if ta ~= tb then
+            return ta < tb
+        end
+        local la = SafeNum(a.level) or 0
+        local lb = SafeNum(b.level) or 0
+        if la ~= lb then
+            return la < lb
+        end
+        return (a.questOrder or 0) < (b.questOrder or 0)
     end
 
     local maxContentsHeight = GetMaxTrackerContentsHeight(tracker, contents)
     local activeZoneNames = {}
     local anyZoneExpanded = false
-
     local renderItems = {}
-    for _, grp in ipairs(orderedGroups) do
-        activeZoneNames[#activeZoneNames + 1] = grp.zoneName
-        local isCollapsed = self:IsTrackerZoneCollapsed(grp.zoneName)
-        grp.isCollapsed = isCollapsed
 
-        local headerItem = {
-            type = "HEADER",
-            grp = grp,
-            height = TRACKER_ZONE_HEADER_HEIGHT,
-        }
-        renderItems[#renderItems + 1] = headerItem
-        grp.headerItemIndex = #renderItems
-
-        if isCollapsed then
-            for _, entry in ipairs(grp.entries) do
-                HideTrackerQuestEntry(entry)
+    if isFlatList then
+        if sortMode == "LEVEL_DESC" then
+            table.sort(questBlocks, SortEntriesByLevelDesc)
+        elseif sortMode == "ALPHA" then
+            table.sort(questBlocks, SortEntriesAlphabetically)
+        else
+            table.sort(questBlocks, SortEntriesByLevel)
+        end
+        for bIdx, entry in ipairs(questBlocks) do
+            local b = entry.block
+            local bs = BS(b)
+            local bHeight = SafeNum(b.height) or bs.height or SafeNum(b:GetHeight()) or 36
+            renderItems[#renderItems + 1] = {
+                type = "QUEST",
+                grp = nil,
+                entry = entry,
+                bIdx = bIdx,
+                height = bHeight,
+            }
+        end
+    else
+        if sortMode == "ZONE" then
+            table.sort(orderedGroups, function(a, b)
+                if prioritizeCurrent then
+                    local aCur = (a.zoneName == currentPlayerZone)
+                    local bCur = (b.zoneName == currentPlayerZone)
+                    if aCur ~= bCur then
+                        return aCur
+                    end
+                end
+                local za = (a.zoneName or ""):lower()
+                local zb = (b.zoneName or ""):lower()
+                if za ~= zb then
+                    return za < zb
+                end
+                return (a.zoneName or "") < (b.zoneName or "")
+            end)
+            for _, grp in ipairs(orderedGroups) do
+                table.sort(grp.entries, SortEntriesByLevel)
+            end
+        elseif sortMode == "COMPLETION" then
+            table.sort(orderedGroups, function(a, b)
+                if a.order ~= b.order then
+                    return a.order < b.order
+                end
+                return (a.zoneName or "") < (b.zoneName or "")
+            end)
+            for _, grp in ipairs(orderedGroups) do
+                table.sort(grp.entries, SortEntriesByLevel)
             end
         else
-            anyZoneExpanded = true
-            for bIdx, entry in ipairs(grp.entries) do
-                local b = entry.block
-                local bs = BS(b)
-                local bHeight = SafeNum(b.height) or bs.height or SafeNum(b:GetHeight()) or 36
-                renderItems[#renderItems + 1] = {
-                    type = "QUEST",
-                    grp = grp,
-                    entry = entry,
-                    bIdx = bIdx,
-                    height = bHeight,
-                }
+            table.sort(orderedGroups, function(a, b)
+                if a.order ~= b.order then
+                    return a.order < b.order
+                end
+                return a.zoneName < b.zoneName
+            end)
+            for _, grp in ipairs(orderedGroups) do
+                table.sort(grp.entries, function(a, b)
+                    return (a.questOrder or 0) < (b.questOrder or 0)
+                end)
+            end
+        end
+
+        for _, grp in ipairs(orderedGroups) do
+            activeZoneNames[#activeZoneNames + 1] = grp.zoneName
+            local isCollapsed = self:IsTrackerZoneCollapsed(grp.zoneName)
+            grp.isCollapsed = isCollapsed
+
+            local headerItem = {
+                type = "HEADER",
+                grp = grp,
+                height = TRACKER_ZONE_HEADER_HEIGHT,
+            }
+            renderItems[#renderItems + 1] = headerItem
+            grp.headerItemIndex = #renderItems
+
+            if isCollapsed then
+                for _, entry in ipairs(grp.entries) do
+                    HideTrackerQuestEntry(entry)
+                end
+            else
+                anyZoneExpanded = true
+                for bIdx, entry in ipairs(grp.entries) do
+                    local b = entry.block
+                    local bs = BS(b)
+                    local bHeight = SafeNum(b.height) or bs.height or SafeNum(b:GetHeight()) or 36
+                    renderItems[#renderItems + 1] = {
+                        type = "QUEST",
+                        grp = grp,
+                        entry = entry,
+                        bIdx = bIdx,
+                        height = bHeight,
+                    }
+                end
             end
         end
     end
@@ -1430,7 +1629,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         local h = startY
         local hasPrev = (#topBanners > 0)
         local firstItem = renderItems[startIdx]
-        if firstItem and firstItem.type == "QUEST" then
+        if firstItem and firstItem.type == "QUEST" and firstItem.grp then
             local gap = hasPrev and TRACKER_ZONE_HEADER_GAP_BOTTOM or 0
             h = h + gap + TRACKER_ZONE_HEADER_HEIGHT
             hasPrev = true
@@ -1442,7 +1641,8 @@ function FQL:ApplyTrackerZoneLayout(tracker)
                 if it.type == "HEADER" then
                     gap = TRACKER_ZONE_HEADER_GAP_TOP
                 else
-                    gap = (i == startIdx or renderItems[i - 1].type == "HEADER") and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_BLOCK_GAP
+                    local afterHeader = it.grp and (i == startIdx or (renderItems[i - 1] and renderItems[i - 1].type == "HEADER"))
+                    gap = afterHeader and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_BLOCK_GAP
                 end
             end
             h = h + gap + it.height
@@ -1490,6 +1690,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         local headerGap = prevAnchorFrame and (isFirstHeader and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_ZONE_HEADER_GAP_TOP) or 0
 
         hBtn.zoneName = grp.zoneName
+        hBtn.grpEntries = grp.entries
         hBtn.questCount = #grp.entries
         hBtn.isCollapsed = isCollapsed
         hBtn:SetHeight(TRACKER_ZONE_HEADER_HEIGHT)
@@ -1541,7 +1742,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     end
 
     local firstVisibleItem = renderItems[scrollIndex]
-    if firstVisibleItem and firstVisibleItem.type == "QUEST" then
+    if firstVisibleItem and firstVisibleItem.type == "QUEST" and firstVisibleItem.grp then
         RenderZoneHeader(firstVisibleItem.grp, true)
     end
 
@@ -1566,8 +1767,11 @@ function FQL:ApplyTrackerZoneLayout(tracker)
             local entry = it.entry
             local b = entry.block
             local bs = BS(b)
-            local prevIsHeader = (i == scrollIndex) or (renderItems[i - 1] and renderItems[i - 1].type == "HEADER")
-            local gap = prevIsHeader and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_BLOCK_GAP
+            local prevIsHeader = it.grp and ((i == scrollIndex) or (renderItems[i - 1] and renderItems[i - 1].type == "HEADER"))
+            local gap = 0
+            if prevAnchorFrame then
+                gap = prevIsHeader and TRACKER_ZONE_HEADER_GAP_BOTTOM or TRACKER_BLOCK_GAP
+            end
             local bHeight = it.height
             local fits = (not overflowReached) and ((estimatedHeight + gap + bHeight <= maxContentsHeight) or visibleItemCount == 0)
 
@@ -1581,7 +1785,11 @@ function FQL:ApplyTrackerZoneLayout(tracker)
 
                 if CanChangeFrame(b) then
                     b:ClearAllPoints()
-                    b:SetPoint("TOP", prevAnchorFrame, "BOTTOM", 0, -gap)
+                    if prevAnchorFrame then
+                        b:SetPoint("TOP", prevAnchorFrame, "BOTTOM", 0, -gap)
+                    else
+                        b:SetPoint("TOP", contents, "TOP", 0, -startY)
+                    end
                     if bs.horizPoints and #bs.horizPoints > 0 and scrollbarPad == 0 then
                         for _, hp in ipairs(bs.horizPoints) do
                             b:SetPoint(hp.p, hp.rel or contents, hp.rp, hp.x, hp.y)

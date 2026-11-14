@@ -1650,6 +1650,7 @@ function FQL:BuildStructuredLog()
     ExpandAllNativeHeaders()
     local numShown, numQuests = GetNumLogEntries()
     local sections = {}
+    local sectionsByTitle = {}
     local currentSection = nil
     local allQuestsByID = {}
     local firstQuestID = nil
@@ -1659,20 +1660,30 @@ function FQL:BuildStructuredLog()
         local info = GetLogEntryInfo(i)
         if info and not info.isHidden and not info.isBounty and not info.isTask then
             if info.isHeader then
-                currentSection = {
-                    title = info.title,
-                    logIndex = i,
-                    quests = {},
-                }
-                sections[#sections + 1] = currentSection
-            elseif info.questID and info.questID > 0 then
+                local hTitle = (info.title and info.title ~= "") and info.title or "Quests"
+                currentSection = sectionsByTitle[hTitle]
                 if not currentSection then
                     currentSection = {
-                        title = "Quests",
-                        logIndex = 0,
+                        title = hTitle,
+                        logIndex = i,
                         quests = {},
                     }
+                    sectionsByTitle[hTitle] = currentSection
                     sections[#sections + 1] = currentSection
+                end
+            elseif info.questID and info.questID > 0 then
+                if not currentSection then
+                    local hTitle = "Quests"
+                    currentSection = sectionsByTitle[hTitle]
+                    if not currentSection then
+                        currentSection = {
+                            title = hTitle,
+                            logIndex = 0,
+                            quests = {},
+                        }
+                        sectionsByTitle[hTitle] = currentSection
+                        sections[#sections + 1] = currentSection
+                    end
                 end
                 info.headerTitle = currentSection.title
                 if (not info.level or info.level <= 0) and info.questID and info.questID > 0 and C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
@@ -1687,10 +1698,38 @@ function FQL:BuildStructuredLog()
                 currentSection.quests[#currentSection.quests + 1] = info
                 allQuestsByID[info.questID] = info
                 countedQuests = countedQuests + 1
-                if not firstQuestID then
-                    firstQuestID = info.questID
-                end
             end
+        end
+    end
+
+    table.sort(sections, function(a, b)
+        local ta = (a.title or ""):lower()
+        local tb = (b.title or ""):lower()
+        if ta ~= tb then
+            return ta < tb
+        end
+        if (a.title or "") ~= (b.title or "") then
+            return (a.title or "") < (b.title or "")
+        end
+        return (a.logIndex or 0) < (b.logIndex or 0)
+    end)
+
+    for _, sec in ipairs(sections) do
+        table.sort(sec.quests, function(a, b)
+            local la = SafeNum(a.level) or 0
+            local lb = SafeNum(b.level) or 0
+            if la ~= lb then
+                return la < lb
+            end
+            local ta = (a.title or ""):lower()
+            local tb = (b.title or ""):lower()
+            if ta ~= tb then
+                return ta < tb
+            end
+            return (a.logIndex or 0) < (b.logIndex or 0)
+        end)
+        if not firstQuestID and #sec.quests > 0 then
+            firstQuestID = sec.quests[1].questID
         end
     end
 

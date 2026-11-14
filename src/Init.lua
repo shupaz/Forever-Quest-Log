@@ -124,12 +124,31 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         return
     end
     if msg == "tracker" then
-        shupazForeverQuestLogDB.trackerByZone = not (shupazForeverQuestLogDB.trackerByZone ~= false)
-        FQL:RefreshObjectiveTracker()
-        if FQL.optionsPanel and FQL.optionsPanel:IsShown() and FQL.optionsPanel.RefreshControls then
-            FQL.optionsPanel:RefreshControls()
+        local order = { "AUTO", "ZONE", "COMPLETION", "LEVEL", "LEVEL_DESC", "ALPHA" }
+        local cur = (FQL.GetTrackerSortMode and FQL:GetTrackerSortMode()) or (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerSortMode) or "AUTO"
+        local nextMode = "AUTO"
+        for i, m in ipairs(order) do
+            if m == cur then
+                nextMode = order[(i % #order) + 1]
+                break
+            end
         end
-        print("|cffffd200shupaz ForeverQuestLog:|r Objective Tracker zone headers " .. (shupazForeverQuestLogDB.trackerByZone and "enabled." or "disabled."))
+        if FQL.SetTrackerSortMode then
+            FQL:SetTrackerSortMode(nextMode)
+        else
+            shupazForeverQuestLogDB.trackerSortMode = nextMode
+            shupazForeverQuestLogDB.trackerByZone = true
+            FQL:RefreshObjectiveTracker()
+        end
+        local labels = {
+            AUTO = "Automatic",
+            ZONE = "Group by Zone",
+            COMPLETION = "Group by Completion Status",
+            LEVEL = "List by Level",
+            LEVEL_DESC = "List by Level (High to Low)",
+            ALPHA = "List Alphabetically",
+        }
+        print("|cffffd200shupaz ForeverQuestLog:|r Objective Tracker grouping & sorting set to " .. (labels[nextMode] or nextMode) .. ".")
         return
     end
     local scaleArg = msg:match("^scale%s+([%d%.]+)$")
@@ -246,6 +265,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             shupazForeverQuestLogDB._wowheadHideDefaultV1 = true
             shupazForeverQuestLogDB.wowheadBarPosition = "HIDE"
         end
+        shupazForeverQuestLogDB.trackerByZone = true
 
         shupazForeverQuestLogCharDB = shupazForeverQuestLogCharDB or {}
         for k, v in pairs(CHAR_DEFAULTS) do

@@ -5,7 +5,7 @@ end
 _G.shupaz_ForeverQuestLog = FQL
 
 FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.5"
+FQL.VERSION = "1.0.6"
 
 local MIN_SCALE, MAX_SCALE = 0.6, 1.6
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
@@ -24,6 +24,7 @@ local DB_DEFAULTS = {
     showTooltips = true,
     questLogFontScale = 1.0,
     trackerByZone = true,
+    trackerSortMode = "AUTO",
     trackerCurrentZoneFirst = true,
     trackerShowZoneCount = true,
     trackerScale = 1.0,
