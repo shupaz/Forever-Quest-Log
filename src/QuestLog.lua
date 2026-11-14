@@ -997,6 +997,42 @@ function FQL:CreateMainFrame()
         if GameTooltip then GameTooltip:Hide() end
     end)
 
+    -- Quest & Item Database Search Button next to Settings Gear Button
+    local dbSearchBtn = CreateFrame("Button", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    frame.dbSearchBtn = dbSearchBtn
+    dbSearchBtn:SetSize(124, 22)
+    dbSearchBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
+    SetBackdrop(dbSearchBtn, "Interface\\Buttons\\WHITE8X8", "Interface\\Tooltips\\UI-Tooltip-Border", 10, 2)
+    dbSearchBtn:SetBackdropColor(0.08, 0.06, 0.04, 0.95)
+    dbSearchBtn:SetBackdropBorderColor(0.50, 0.38, 0.20, 0.9)
+    dbSearchBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    dbSearchBtn.icon = dbSearchBtn:CreateTexture(nil, "ARTWORK")
+    dbSearchBtn.icon:SetSize(13, 13)
+    dbSearchBtn.icon:SetPoint("LEFT", 7, 0)
+    dbSearchBtn.icon:SetTexture("Interface\\GossipFrame\\AvailableQuestIcon")
+
+    dbSearchBtn.label = dbSearchBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dbSearchBtn.label:SetPoint("LEFT", dbSearchBtn.icon, "RIGHT", 4, 0)
+    dbSearchBtn.label:SetText("Quest & Item DB")
+
+    dbSearchBtn:SetScript("OnClick", function()
+        PlayClickSound()
+        if FQL.ToggleQuestSearch then
+            FQL:ToggleQuestSearch()
+        end
+    end)
+    dbSearchBtn:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Quest & Item Database Search", 1, 0.82, 0)
+        GameTooltip:AddLine("Search all Classic & Forever quests by Zone, Quest Name, Item Name, or NPC, and highlight pickup locations on the World Map.\n|cffffd200Slash command:|r /fql search", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    dbSearchBtn:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+
     -- ========================================================
     -- LEFT PANE: Quest List
     -- ========================================================

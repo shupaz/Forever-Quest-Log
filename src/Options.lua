@@ -400,6 +400,101 @@ function FQL:CreateOptionsPanel()
                 end
             )
 
+            local function RefreshMapAndSearch()
+                if FQL.RefreshMapQuestPins then
+                    FQL:RefreshMapQuestPins()
+                end
+                if FQL.searchFrame and FQL.searchFrame:IsShown() and FQL.RunQuestSearch then
+                    FQL:RunQuestSearch()
+                end
+            end
+
+            AddCheckbox(
+                "showMapAvailableQuests",
+                "FQL_SHOW_MAP_AVAILABLE_QUESTS",
+                "Show Available Quests on World Map (!)",
+                "Displays available quest pickup icons (!) on the open World Map using Forever Quest Log's built-in Classic & Forever database.",
+                RefreshMapAndSearch
+            )
+
+            AddCheckbox(
+                "showLowLevelMapQuests",
+                "FQL_SHOW_LOW_LEVEL_MAP_QUESTS",
+                "Show Low-Level (Trivial) Quests",
+                "When enabled, displays quests that are below your Low-Level Threshold on the World Map and in the Quest DB Search (tinted silver).",
+                RefreshMapAndSearch
+            )
+
+            -- Low-Level Threshold Slider (0 to 60 levels below player)
+            local minLvlOptions = Settings.CreateSliderOptions(0, 60, 1)
+            if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
+                minLvlOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+                    return string.format("-%d Lv", math.floor(value + 0.5))
+                end)
+            end
+            local minLvlSetting = Settings.RegisterAddOnSetting(
+                page.category,
+                "FQL_MAP_QUEST_MIN_LEVEL_OFFSET",
+                "mapQuestMinLevelOffset",
+                shupazForeverQuestLogDB,
+                Settings.VarType.Number,
+                "Low-Level Threshold (Below Player)",
+                DB_DEFAULTS.mapQuestMinLevelOffset or 7
+            )
+            minLvlSetting:SetValueChangedCallback(function()
+                RefreshMapAndSearch()
+            end)
+            local minLvlInit = Settings.CreateSliderInitializer(
+                minLvlSetting,
+                minLvlOptions,
+                "Quests more than this many levels below your character level are considered low-level (trivial) and hidden unless 'Show Low-Level Quests' is enabled."
+            )
+            page:AddInitializer(minLvlInit)
+            regSettings["mapQuestMinLevelOffset"] = minLvlSetting
+
+            -- High-Level Threshold Slider (0 to 15 levels above player)
+            local maxLvlOptions = Settings.CreateSliderOptions(0, 15, 1)
+            if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
+                maxLvlOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+                    return string.format("+%d Lv", math.floor(value + 0.5))
+                end)
+            end
+            local maxLvlSetting = Settings.RegisterAddOnSetting(
+                page.category,
+                "FQL_MAP_QUEST_MAX_LEVEL_OFFSET",
+                "mapQuestMaxLevelOffset",
+                shupazForeverQuestLogDB,
+                Settings.VarType.Number,
+                "High-Level Threshold (Above Player)",
+                DB_DEFAULTS.mapQuestMaxLevelOffset or 5
+            )
+            maxLvlSetting:SetValueChangedCallback(function()
+                RefreshMapAndSearch()
+            end)
+            local maxLvlInit = Settings.CreateSliderInitializer(
+                maxLvlSetting,
+                maxLvlOptions,
+                "Maximum number of levels above your character level to show quests on the World Map and in level-filtered searches."
+            )
+            page:AddInitializer(maxLvlInit)
+            regSettings["mapQuestMaxLevelOffset"] = maxLvlSetting
+
+            AddCheckbox(
+                "showUpcomingHighLevelQuests",
+                "FQL_SHOW_UPCOMING_HIGH_LEVEL_QUESTS",
+                "Show Upcoming High-Level Quests",
+                "Shows quests within your High-Level Threshold even if your character has not yet reached the quest's minimum required level (highlighted in red).",
+                RefreshMapAndSearch
+            )
+
+            AddCheckbox(
+                "showMapEventQuests",
+                "FQL_SHOW_MAP_EVENT_QUESTS",
+                "Show World Event & Holiday Quests on Map",
+                "Displays seasonal holiday, Darkmoon Faire, Stranglethorn Fishing Extravaganza, Ahn'Qiraj War Effort, and Scourge Invasion quests on the World Map.",
+                RefreshMapAndSearch
+            )
+
             -- Register category with Blizzard Settings
             Settings.RegisterAddOnCategory(page.category)
 
@@ -478,8 +573,13 @@ function FQL:ResetToDefaults()
     UpdateKeybindOverrides()
 
     if self.RestorePosition then self:RestorePosition() end
+    if self.ResetHiddenMapQuests then self:ResetHiddenMapQuests() end
     if self.Refresh then self:Refresh() end
     if self.RefreshObjectiveTracker then self:RefreshObjectiveTracker() end
+    if self.RefreshMapQuestPins then self:RefreshMapQuestPins() end
+    if self.searchFrame and self.searchFrame:IsShown() and self.RunQuestSearch then
+        self:RunQuestSearch()
+    end
 
     if self.optionsPanel and self.optionsPanel.Redisplay then
         self.optionsPanel:Redisplay()

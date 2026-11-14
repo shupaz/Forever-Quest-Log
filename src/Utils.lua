@@ -30,6 +30,13 @@ local DB_DEFAULTS = {
     trackerScale = 1.0,
     trackerFont = "DEFAULT",
     trackerFontScale = 1.0,
+    -- World Map Available Quest Pin & Level Threshold Settings
+    showMapAvailableQuests = true,
+    showLowLevelMapQuests = false,
+    mapQuestMinLevelOffset = 7,
+    mapQuestMaxLevelOffset = 5,
+    showUpcomingHighLevelQuests = false,
+    showMapEventQuests = false,
 }
 FQL.DB_DEFAULTS = DB_DEFAULTS
 
@@ -37,6 +44,7 @@ local CHAR_DEFAULTS = {
     collapsedHeaders = {},
     collapsedTrackerZones = {},
     selectedQuestID = nil,
+    hiddenMapQuests = {},
 }
 FQL.CHAR_DEFAULTS = CHAR_DEFAULTS
 
@@ -1153,3 +1161,542 @@ FQL.AbandonSelectedQuest      = AbandonSelectedQuest
 FQL.AbandonAllQuests          = AbandonAllQuests
 FQL.ShareSelectedQuest        = ShareSelectedQuest
 FQL.ShowQuestOnWorldMap       = ShowQuestOnWorldMap
+
+-- ============================================================
+-- Quest Database Eligibility & Level Threshold Helpers
+-- ============================================================
+
+local RACE_ID_TO_BIT = {
+    [1]  = 1,    -- Human
+    [2]  = 2,    -- Orc
+    [3]  = 4,    -- Dwarf
+    [4]  = 8,    -- Night Elf
+    [5]  = 16,   -- Undead
+    [6]  = 32,   -- Tauren
+    [7]  = 64,   -- Gnome
+    [8]  = 128,  -- Troll
+    [9]  = 256,  -- Goblin
+    [95] = 4096, -- Skyborne (Alliance)
+    [96] = 8192, -- Skyborne (Horde)
+}
+
+local CLASS_FILE_TO_BIT = {
+    WARRIOR     = 1,
+    PALADIN     = 2,
+    HUNTER      = 4,
+    ROGUE       = 8,
+    PRIEST      = 16,
+    DEATHKNIGHT = 32,
+    SHAMAN      = 64,
+    MAGE        = 128,
+    WARLOCK     = 256,
+    MONK        = 512,
+    DRUID       = 1024,
+}
+
+function FQL:GetPlayerRaceAndClassMasks()
+    local raceBit = 0
+    local factionGroup = UnitFactionGroup and UnitFactionGroup("player") or "Alliance"
+    if UnitRace then
+        local _, raceFile, raceID = UnitRace("player")
+        if raceID and RACE_ID_TO_BIT[raceID] then
+            raceBit = RACE_ID_TO_BIT[raceID]
+        elseif type(raceFile) == "string" then
+            local rf = raceFile:upper()
+            if rf == "HUMAN" then raceBit = 1
+            elseif rf == "ORC" then raceBit = 2
+            elseif rf == "DWARF" then raceBit = 4
+            elseif rf == "NIGHTELF" then raceBit = 8
+            elseif rf == "SCOURGE" or rf == "UNDEAD" then raceBit = 16
+            elseif rf == "TAUREN" then raceBit = 32
+            elseif rf == "GNOME" then raceBit = 64
+            elseif rf == "TROLL" then raceBit = 128
+            elseif rf == "GOBLIN" then raceBit = 256
+            elseif rf:find("SKYBORNE") then
+                raceBit = (factionGroup == "Horde") and 8192 or 4096
+            end
+        end
+    end
+    if raceBit == 0 then
+        raceBit = (factionGroup == "Horde") and 2 or 1
+    end
+
+    local classBit = 0
+    if UnitClass then
+        local _, classFile = UnitClass("player")
+        if type(classFile) == "string" and CLASS_FILE_TO_BIT[classFile] then
+            classBit = CLASS_FILE_TO_BIT[classFile]
+        end
+    end
+
+    return raceBit, classBit, factionGroup
+end
+
+FQL._completedQuestsCache = nil
+FQL._completedQuestsCacheTime = 0
+
+function FQL:InvalidateCompletedQuestsCache()
+    self._completedQuestsCache = nil
+    self._completedQuestsCacheTime = 0
+end
+
+function FQL:GetCompletedQuestsMap()
+    local now = GetTime and GetTime() or 0
+    if self._completedQuestsCache and (now - self._completedQuestsCacheTime) < 5 then
+        return self._completedQuestsCache
+    end
+    local map = {}
+    if C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs then
+        local ok, list = pcall(C_QuestLog.GetAllCompletedQuestIDs)
+        if ok and type(list) == "table" then
+            for i = 1, #list do
+                local qid = list[i]
+                if type(qid) == "number" then
+                    map[qid] = true
+                end
+            end
+        end
+    end
+    self._completedQuestsCache = map
+    self._completedQuestsCacheTime = now
+    return map
+end
+
+function FQL:IsQuestCompletedByPlayer(questID)
+    if not questID or questID <= 0 then return false end
+    local map = self:GetCompletedQuestsMap()
+    if map[questID] then return true end
+    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
+        local ok, res = pcall(C_QuestLog.IsQuestFlaggedCompleted, questID)
+        if ok and res == true then
+            map[questID] = true
+            return true
+        end
+    end
+    return false
+end
+
+function FQL:IsQuestInPlayerLog(questID)
+    if not questID or questID <= 0 then return false end
+    if C_QuestLog and C_QuestLog.IsOnQuest then
+        local ok, onQuest = pcall(C_QuestLog.IsOnQuest, questID)
+        if ok and onQuest == true then
+            return true
+        end
+    end
+    return GetLogIndexForQuest(questID) ~= nil
+end
+
+FQL.sessionInactiveQuests = {}
+
+function FQL:IsQuestHiddenByUser(questID)
+    if not questID then return false end
+    local charDB = _G.shupazForeverQuestLogCharDB
+    if charDB and type(charDB.hiddenMapQuests) == "table" and charDB.hiddenMapQuests[questID] then
+        return true
+    end
+    return false
+end
+
+function FQL:SetQuestHiddenByUser(questID, hidden)
+    if not questID then return end
+    if type(_G.shupazForeverQuestLogCharDB) ~= "table" then
+        _G.shupazForeverQuestLogCharDB = {}
+    end
+    if type(_G.shupazForeverQuestLogCharDB.hiddenMapQuests) ~= "table" then
+        _G.shupazForeverQuestLogCharDB.hiddenMapQuests = {}
+    end
+    if hidden then
+        _G.shupazForeverQuestLogCharDB.hiddenMapQuests[questID] = true
+    else
+        _G.shupazForeverQuestLogCharDB.hiddenMapQuests[questID] = nil
+        self.sessionInactiveQuests[questID] = nil
+    end
+end
+
+function FQL:ResetHiddenMapQuests()
+    if type(_G.shupazForeverQuestLogCharDB) == "table" then
+        _G.shupazForeverQuestLogCharDB.hiddenMapQuests = {}
+    end
+    self.sessionInactiveQuests = {}
+end
+
+local SKILL_ID_TO_NAME = {
+    [129] = "First Aid",
+    [164] = "Blacksmithing",
+    [165] = "Leatherworking",
+    [171] = "Alchemy",
+    [182] = "Herbalism",
+    [185] = "Cooking",
+    [186] = "Mining",
+    [197] = "Tailoring",
+    [202] = "Engineering",
+    [333] = "Enchanting",
+    [356] = "Fishing",
+    [393] = "Skinning",
+    [755] = "Jewelcrafting",
+    [762] = "Riding",
+}
+FQL.SKILL_ID_TO_NAME = SKILL_ID_TO_NAME
+
+FQL._skillCache = nil
+FQL._skillCacheTime = 0
+
+function FQL:InvalidateSkillAndRepCache()
+    self._skillCache = nil
+    self._skillCacheTime = 0
+end
+
+function FQL:GetPlayerSkillsMap()
+    local now = GetTime and GetTime() or 0
+    if self._skillCache and (now - self._skillCacheTime) < 5 then
+        return self._skillCache
+    end
+    local skillsById = {}
+    local skillsByName = {}
+
+    if C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo then
+        local okN, num = pcall(C_SkillInfo.GetNumSkillLines)
+        if okN and type(num) == "number" and num > 0 then
+            for i = 1, num do
+                local okI, info = pcall(C_SkillInfo.GetSkillLineInfo, i)
+                if okI and type(info) == "table" and not info.isHeader then
+                    local rank = tonumber(info.rank or info.skillRank) or 0
+                    if info.skillID then
+                        skillsById[info.skillID] = rank
+                    end
+                    if type(info.name) == "string" then
+                        skillsByName[info.name:lower()] = rank
+                    end
+                end
+            end
+        end
+    end
+
+    if next(skillsById) == nil and next(skillsByName) == nil and GetNumSkillLines and GetSkillLineInfo then
+        local okN, num = pcall(GetNumSkillLines)
+        if okN and type(num) == "number" and num > 0 then
+            for i = 1, num do
+                local okI, name, isHeader, _, rank = pcall(GetSkillLineInfo, i)
+                if okI and type(name) == "string" and not isHeader then
+                    skillsByName[name:lower()] = tonumber(rank) or 0
+                end
+            end
+        end
+    end
+
+    self._skillCache = { byId = skillsById, byName = skillsByName }
+    self._skillCacheTime = now
+    return self._skillCache
+end
+
+function FQL:MeetsSkillRequirement(reqSkill)
+    if type(reqSkill) ~= "table" then return true end
+    local skillID = reqSkill[1]
+    local minRank = reqSkill[2] or 1
+    if not skillID then return true end
+
+    local cache = self:GetPlayerSkillsMap()
+    local rank = cache.byId[skillID]
+    if rank == nil then
+        local sName = SKILL_ID_TO_NAME[skillID]
+        if sName then
+            rank = cache.byName[sName:lower()]
+        end
+    end
+    if rank == nil then
+        return false
+    end
+    return rank >= minRank
+end
+
+local FACTIONS_BELOW_NEUTRAL = {
+    [87]  = true, -- Bloodsail Buccaneers
+    [576] = true, -- Timbermaw Hold
+    [910] = true, -- Brood of Nozdormu
+}
+
+function FQL:GetPlayerFactionStanding(factionID)
+    if not factionID then return 0 end
+    if C_Reputation and C_Reputation.GetFactionDataByID then
+        local ok, data = pcall(C_Reputation.GetFactionDataByID, factionID)
+        if ok and type(data) == "table" and data.name then
+            return tonumber(data.currentStanding) or 0
+        end
+    end
+    if GetFactionInfoByID then
+        local ok, name, _, _, _, _, barValue = pcall(GetFactionInfoByID, factionID)
+        if ok and name then
+            return tonumber(barValue) or 0
+        end
+    end
+    return FACTIONS_BELOW_NEUTRAL[factionID] and -36000 or 0
+end
+
+function FQL:MeetsRepRequirement(reqMinRep, reqMaxRep)
+    if type(reqMinRep) == "table" and reqMinRep[1] and reqMinRep[2] then
+        local cur = self:GetPlayerFactionStanding(reqMinRep[1])
+        if cur < reqMinRep[2] then
+            return false
+        end
+    end
+    if type(reqMaxRep) == "table" and reqMaxRep[1] and reqMaxRep[2] then
+        local cur = self:GetPlayerFactionStanding(reqMaxRep[1])
+        if cur >= reqMaxRep[2] then
+            return false
+        end
+    end
+    return true
+end
+
+function FQL:MeetsSpellRequirement(reqSpell)
+    if type(reqSpell) ~= "number" or reqSpell == 0 then return true end
+    local checkID = math.abs(reqSpell)
+    local known = false
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local ok, res = pcall(C_SpellBook.IsSpellKnown, checkID)
+        if ok and res == true then known = true end
+    end
+    if not known and IsPlayerSpell then
+        local ok, res = pcall(IsPlayerSpell, checkID)
+        if ok and res == true then known = true end
+    end
+    if not known and IsSpellKnown then
+        local ok, res = pcall(IsSpellKnown, checkID)
+        if ok and res == true then known = true end
+    end
+    if reqSpell > 0 then
+        return known
+    else
+        return not known
+    end
+end
+
+function FQL:GetDatabaseQuestStatus(questID, qEntry)
+    local QD = self.QuestData
+    if not qEntry and QD and QD.quests then
+        qEntry = QD.quests[questID]
+    end
+    if not qEntry then
+        return "UNKNOWN"
+    end
+
+    if self:IsQuestInPlayerLog(questID) then
+        return "IN_LOG"
+    end
+
+    local flags = qEntry[11] or 0
+    local isRepeatable = (bit and bit.band(flags, 1) ~= 0) or (flags % 2 == 1)
+
+    if not isRepeatable and self:IsQuestCompletedByPlayer(questID) then
+        return "COMPLETED"
+    end
+
+    local raceBit, classBit = self:GetPlayerRaceAndClassMasks()
+    local reqRaces = qEntry[9] or 0
+    if reqRaces > 0 and bit and bit.band(reqRaces, raceBit) == 0 then
+        return "INELIGIBLE_RACE"
+    end
+
+    local reqClasses = qEntry[10] or 0
+    if reqClasses > 0 and classBit > 0 and bit and bit.band(reqClasses, classBit) == 0 then
+        return "INELIGIBLE_CLASS"
+    end
+
+    -- Check user-hidden or session-detected inactive world quests
+    if self:IsQuestHiddenByUser(questID) or self.sessionInactiveQuests[questID] then
+        return "HIDDEN"
+    end
+
+    -- Check World Event / Holiday / War Effort / Invasion flag (bit 4)
+    local isEventQuest = (bit and bit.band(flags, 4) ~= 0)
+    if isEventQuest then
+        local db = _G.shupazForeverQuestLogDB or DB_DEFAULTS
+        if not db.showMapEventQuests then
+            return "EVENT_INACTIVE"
+        end
+    end
+
+    -- Check nextQuestInChain (if completed or in log, this breadcrumb/step is obsolete)
+    local nextQ = qEntry[15]
+    if nextQ and nextQ > 0 then
+        if self:IsQuestCompletedByPlayer(nextQ) or self:IsQuestInPlayerLog(nextQ) then
+            return "EXCLUSIVE_LOCKED"
+        end
+    end
+
+    -- Check breadcrumbForQuestId ([25])
+    local bcFor = qEntry[25]
+    if bcFor and bcFor > 0 then
+        if self:IsQuestCompletedByPlayer(bcFor) or self:IsQuestInPlayerLog(bcFor) then
+            return "EXCLUSIVE_LOCKED"
+        end
+    end
+
+    -- Check breadcrumbs ([26]) - if a breadcrumb for this quest is currently in log, hide until turned in/abandoned
+    local bcs = qEntry[26]
+    if type(bcs) == "table" then
+        for i = 1, #bcs do
+            if self:IsQuestInPlayerLog(bcs[i]) then
+                return "EXCLUSIVE_LOCKED"
+            end
+        end
+    end
+
+    -- Check exclusiveTo (includes availableUntilCompleted and disabledByQuest)
+    local excl = qEntry[14]
+    if type(excl) == "table" then
+        for i = 1, #excl do
+            local exID = excl[i]
+            if self:IsQuestCompletedByPlayer(exID) or self:IsQuestInPlayerLog(exID) then
+                return "EXCLUSIVE_LOCKED"
+            end
+        end
+    end
+
+    -- Check parentQuest (must be active in log)
+    local parentQ = qEntry[19]
+    if parentQ and parentQ > 0 then
+        if not self:IsQuestInPlayerLog(parentQ) then
+            return "PREREQ_LOCKED"
+        end
+    end
+
+    -- Check availableStartingWith ([27]: must be in log or completed)
+    local availStart = qEntry[27]
+    if availStart and availStart > 0 then
+        if not self:IsQuestInPlayerLog(availStart) and not self:IsQuestCompletedByPlayer(availStart) then
+            return "PREREQ_LOCKED"
+        end
+    end
+
+    -- Check preQuestSingle (any ONE completed satisfies)
+    local preSingle = qEntry[12]
+    if type(preSingle) == "table" and #preSingle > 0 then
+        local anyDone = false
+        for i = 1, #preSingle do
+            if self:IsQuestCompletedByPlayer(preSingle[i]) then
+                anyDone = true
+                break
+            end
+        end
+        if not anyDone then
+            return "PREREQ_LOCKED"
+        end
+    end
+
+    -- Check preQuestGroup (ALL completed satisfies)
+    local preGroup = qEntry[13]
+    if type(preGroup) == "table" and #preGroup > 0 then
+        for i = 1, #preGroup do
+            if not self:IsQuestCompletedByPlayer(preGroup[i]) then
+                return "PREREQ_LOCKED"
+            end
+        end
+    end
+
+    -- Check requiredSkill ([20])
+    if qEntry[20] and not self:MeetsSkillRequirement(qEntry[20]) then
+        return "SKILL_LOCKED"
+    end
+
+    -- Check requiredMinRep ([21]) and requiredMaxRep ([22])
+    if (qEntry[21] or qEntry[22]) and not self:MeetsRepRequirement(qEntry[21], qEntry[22]) then
+        return "REP_LOCKED"
+    end
+
+    -- Check requiredSpell ([23])
+    if qEntry[23] and not self:MeetsSpellRequirement(qEntry[23]) then
+        return "SPELL_LOCKED"
+    end
+
+    local playerLevel = (UnitLevel and UnitLevel("player")) or 1
+    local reqMaxLevel = qEntry[24]
+    if reqMaxLevel and reqMaxLevel > 0 and playerLevel > reqMaxLevel then
+        return "EXCLUSIVE_LOCKED"
+    end
+
+    local reqLevel = qEntry[2] or 1
+    if reqLevel > playerLevel then
+        return "HIGH_LEVEL"
+    end
+
+    return "AVAILABLE"
+end
+
+function FQL:PassesLevelThreshold(qEntry, ignoreThresholds)
+    if not qEntry then return false, false, false end
+    local playerLevel = (UnitLevel and UnitLevel("player")) or 1
+    local reqLevel = qEntry[2] or 1
+    local questLevel = qEntry[3] or reqLevel
+    if questLevel <= 0 then questLevel = reqLevel end
+
+    local db = _G.shupazForeverQuestLogDB or DB_DEFAULTS
+    local minOffset = tonumber(db.mapQuestMinLevelOffset) or 7
+    local maxOffset = tonumber(db.mapQuestMaxLevelOffset) or 5
+    local showLow = db.showLowLevelMapQuests == true
+    local showUpcoming = db.showUpcomingHighLevelQuests == true
+
+    local isLowLevel = (questLevel < (playerLevel - minOffset))
+    local isHighLevel = (reqLevel > playerLevel) or (questLevel > (playerLevel + maxOffset))
+
+    if ignoreThresholds then
+        return true, isLowLevel, isHighLevel
+    end
+
+    -- Check minimum level requirement vs Upcoming High-Level toggle
+    if reqLevel > playerLevel then
+        if not showUpcoming then
+            return false, isLowLevel, true
+        end
+        if reqLevel > (playerLevel + maxOffset) and questLevel > (playerLevel + maxOffset) then
+            return false, isLowLevel, true
+        end
+    end
+
+    -- Check high-level threshold above player level
+    if questLevel > (playerLevel + maxOffset) and reqLevel > (playerLevel + maxOffset) then
+        return false, isLowLevel, true
+    end
+
+    -- Check low-level (trivial) threshold below player level
+    if isLowLevel and not showLow then
+        return false, true, isHighLevel
+    end
+
+    return true, isLowLevel, isHighLevel
+end
+
+function FQL:ShowCopyURLPopup(url, labelText)
+    if not url or url == "" then return end
+    if StaticPopupDialogs and not StaticPopupDialogs["SHUPAZ_FQL_COPY_URL"] then
+        StaticPopupDialogs["SHUPAZ_FQL_COPY_URL"] = {
+            text = "%s\n|cffaaaaaaPress Ctrl+C to copy:|r",
+            button1 = CLOSE or "Close",
+            hasEditBox = true,
+            editBoxWidth = 320,
+            OnShow = function(dialog, data)
+                local eb = dialog.editBox or (dialog.GetEditBox and dialog:GetEditBox())
+                if eb then
+                    eb:SetText(data or "")
+                    eb:SetFocus()
+                    eb:HighlightText()
+                end
+            end,
+            EditBoxOnEscapePressed = function(eb)
+                eb:GetParent():Hide()
+            end,
+            EditBoxOnEnterPressed = function(eb)
+                eb:GetParent():Hide()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+    end
+    if StaticPopup_Show then
+        StaticPopup_Show("SHUPAZ_FQL_COPY_URL", labelText or "Wowhead Forever URL", nil, url)
+    end
+end
+

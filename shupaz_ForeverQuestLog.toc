@@ -13,7 +13,10 @@
 ## SavedVariablesPerCharacter: shupazForeverQuestLogCharDB
 
 src\Utils.lua
+src\QuestData.lua
 src\Hooks.lua
+src\MapQuests.lua
+src\QuestSearch.lua
 src\QuestLog.lua
 src\Tracker.lua
 src\Options.lua

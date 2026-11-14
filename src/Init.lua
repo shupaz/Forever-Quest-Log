@@ -111,6 +111,32 @@ SlashCmdList["FOREVERQUESTLOG"] = function(msg)
         FQL:OpenOptions()
         return
     end
+    if msg == "search" or msg == "db" or msg == "find" then
+        if FQL.ToggleQuestSearch then
+            FQL:ToggleQuestSearch()
+        end
+        return
+    end
+    local searchQuery = msg:match("^search%s+(.+)$") or msg:match("^db%s+(.+)$") or msg:match("^find%s+(.+)$")
+    if searchQuery then
+        if FQL.OpenQuestSearch then
+            FQL:OpenQuestSearch(nil, searchQuery)
+        end
+        return
+    end
+    if msg == "resetpins" or msg == "unhide" then
+        if FQL.ResetHiddenMapQuests then
+            FQL:ResetHiddenMapQuests()
+        end
+        if FQL.RefreshMapQuestPins then
+            FQL:RefreshMapQuestPins()
+        end
+        if FQL.RefreshQuestSearch then
+            FQL:RefreshQuestSearch()
+        end
+        print("|cffffd200shupaz ForeverQuestLog:|r Restored all hidden / inactive map quest pins.")
+        return
+    end
     if msg == "reset" then
         if FQL.ResetToDefaults then
             FQL:ResetToDefaults()
@@ -241,6 +267,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         if arg1 == "Blizzard_ObjectiveTracker" then
             SetupObjectiveTrackerHooks()
             ScheduleTrackerRefresh()
+        elseif arg1 == "Blizzard_WorldMap" and FQL.InitMapQuests then
+            FQL:InitMapQuests()
         end
         if FQL.HookKnownPanels then
             FQL:HookKnownPanels()
@@ -277,6 +305,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         FQL.selectedQuestID = shupazForeverQuestLogCharDB.selectedQuestID
         SetupMapAndBindingHooks()
         SetupObjectiveTrackerHooks()
+        if FQL.InitMapQuests then
+            FQL:InitMapQuests()
+        end
         FQL:CreateMainFrame()
         pcall(FQL.CreateOptionsPanel, FQL)
         ScheduleTrackerRefresh()
@@ -309,6 +340,18 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "UNIT_QUEST_LOG_CHANGED" and arg1 ~= "player" then
         return
+    end
+
+    if event == "QUEST_TURNED_IN" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" or event == "PLAYER_LEVEL_UP" then
+        if FQL.InvalidateCompletedQuestsCache then
+            FQL:InvalidateCompletedQuestsCache()
+        end
+        if FQL.RefreshMapQuestPins and WorldMapFrame and WorldMapFrame:IsShown() then
+            FQL:RefreshMapQuestPins()
+        end
+        if FQL.searchFrame and FQL.searchFrame:IsShown() and FQL.RunQuestSearch then
+            FQL:RunQuestSearch()
+        end
     end
 
     local isWatchOrQuestChange = (
