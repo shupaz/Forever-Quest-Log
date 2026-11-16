@@ -379,6 +379,23 @@ local function GetLogEntryInfo(index)
                     lvl = dLvl
                 end
             end
+            local isComplete = info.isComplete
+            if isComplete == nil then
+                if info.readyForTurnIn == true then
+                    isComplete = 1
+                elseif info.readyForTurnIn == nil and qid > 0 and C_QuestLog.ReadyForTurnIn then
+                    local okR, ready = pcall(C_QuestLog.ReadyForTurnIn, qid)
+                    if okR and ready == true then
+                        isComplete = 1
+                    end
+                end
+                if isComplete == nil and qid > 0 and C_QuestLog.IsFailed then
+                    local okF, failed = pcall(C_QuestLog.IsFailed, qid)
+                    if okF and failed == true then
+                        isComplete = -1
+                    end
+                end
+            end
             return {
                 logIndex = index,
                 title = SafeStr(info.title) or "Unknown",
@@ -386,7 +403,7 @@ local function GetLogEntryInfo(index)
                 suggestedGroup = SafeNum(info.suggestedGroup) or 0,
                 isHeader = info.isHeader == true,
                 isCollapsed = info.isCollapsed == true,
-                isComplete = info.isComplete,
+                isComplete = isComplete,
                 frequency = SafeNum(info.frequency),
                 questID = qid,
                 isOnMap = info.isOnMap == true,
