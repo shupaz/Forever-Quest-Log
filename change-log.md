@@ -4,6 +4,13 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.7] - 2026-11-16
+
+### Fixed
+- **Quest Completion Status Detection**: Updated `GetLogEntryInfo()` in `src/Utils.lua` to check `info.readyForTurnIn` (with fallback to `C_QuestLog.ReadyForTurnIn` and `C_QuestLog.IsFailed`) when `info.isComplete` is `nil` on the modern 11.x `C_QuestLog.GetInfo()` API. Restores `(Complete)` and `(Failed)` indicators in the Quest Log list, quest detail pane, and Objective Tracker completion grouping/counts without triggering `QuestCache` query loops.
+
+---
+
 ## [v1.0.6] - 2026-11-14
 
 ### Added
