@@ -4,6 +4,13 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.9] - 2026-11-17
+
+### Fixed
+- **Forever Trivial Quest Range (`C_QuestLog.GetTrivialRange`)**: Updated `GetDifficultyColor()` in `src/Utils.lua` to query `C_QuestLog.GetTrivialRange()` first on the `_forever_` client (with fallback to `GetQuestGreenRange()` and the level formula), so green/gray quest difficulty thresholds match Forever's World Map tooltips (e.g. level 32 quests at player level 39).
+
+---
+
 ## [v1.0.8] - 2026-11-17
 
 ### Added

@@ -5,7 +5,7 @@ end
 _G.shupaz_ForeverQuestLog = FQL
 
 FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.8"
+FQL.VERSION = "1.0.9"
 
 local MIN_SCALE, MAX_SCALE = 0.6, 1.6
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
@@ -760,16 +760,30 @@ local function GetDifficultyColor(level, questID)
     -- Robust Classic level-differential calculation
     local levelDiff = level - playerLevel
 
-    -- Classic / Forever trivial (grey) range formula (matches Questie & Classic map tooltips)
+    -- Determine trivial (grey) range: prefer Forever's C_QuestLog.GetTrivialRange()
     local greyRange
-    if playerLevel <= 5 then
-        greyRange = 2
-    elseif playerLevel <= 39 then
-        greyRange = math.floor(playerLevel / 10) + 3
-    elseif playerLevel <= 59 then
-        greyRange = math.floor(playerLevel / 5) - 1
-    else
-        greyRange = 9
+    if C_QuestLog and C_QuestLog.GetTrivialRange then
+        local ok, gr = pcall(C_QuestLog.GetTrivialRange)
+        if ok and SafeNum(gr) and gr > 0 then
+            greyRange = gr
+        end
+    end
+    if not greyRange and GetQuestGreenRange then
+        local ok, gr = pcall(GetQuestGreenRange)
+        if ok and SafeNum(gr) and gr > 0 then
+            greyRange = gr
+        end
+    end
+    if not greyRange then
+        if playerLevel <= 5 then
+            greyRange = 2
+        elseif playerLevel <= 39 then
+            greyRange = math.floor(playerLevel / 10) + 3
+        elseif playerLevel <= 59 then
+            greyRange = math.floor(playerLevel / 5) - 1
+        else
+            greyRange = 9
+        end
     end
 
     local qdc = _G.QuestDifficultyColors
