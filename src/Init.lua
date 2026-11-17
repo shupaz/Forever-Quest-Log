@@ -70,6 +70,7 @@ function FQL:OpenToQuest(questID)
         if FQL.SelectLogQuest then
             FQL.SelectLogQuest(questID, logIndex)
         end
+        self._scrollSelectedQuestIntoView = true
     end
     self:Open()
 end
@@ -232,7 +233,54 @@ end
 FQL.ScheduleTrackerRefresh = ScheduleTrackerRefresh
 FQL.ScheduleRefresh = ScheduleRefresh
 
-eventFrame:SetScript("OnEvent", function(_, event, arg1)
+local function AutoTrackAcceptedQuest(arg1, arg2)
+    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.autoTrackQuests == false then
+        return
+    end
+    if not FQL.SetQuestWatchedByID or not FQL.IsQuestWatchedByID then
+        return
+    end
+
+    -- Support both modern (questID) and legacy (questLogIndex, questID) QUEST_ACCEPTED payloads
+    local questID = SafeNum(arg2)
+    local logIndex
+    if questID and questID > 0 then
+        logIndex = SafeNum(arg1)
+    else
+        questID = SafeNum(arg1)
+    end
+    if not questID or questID <= 0 then
+        return
+    end
+
+    local function TryTrackQuest()
+        local idx = logIndex or (FQL.GetLogIndexForQuest and FQL.GetLogIndexForQuest(questID))
+        if idx and FQL.GetLogEntryInfo then
+            local info = FQL.GetLogEntryInfo(idx)
+            if info and (info.isHidden or info.isBounty or info.isHeader) then
+                return true
+            end
+        end
+        if FQL.IsQuestWatchedByID(questID, idx) then
+            return true
+        end
+        FQL.SetQuestWatchedByID(questID, idx, true)
+        if C_QuestLog and C_QuestLog.SortQuestWatches then
+            pcall(C_QuestLog.SortQuestWatches)
+        end
+        return FQL.IsQuestWatchedByID(questID, idx)
+    end
+
+    if not TryTrackQuest() and C_Timer and C_Timer.After then
+        C_Timer.After(0.05, function()
+            if TryTrackQuest() then
+                ScheduleTrackerRefresh(true)
+            end
+        end)
+    end
+end
+
+eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if FQL._isRefreshing and (event == "QUEST_LOG_UPDATE" or event == "UNIT_QUEST_LOG_CHANGED") then
         return
     end
@@ -273,6 +321,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
                 shupazForeverQuestLogCharDB[k] = type(v) == "table" and {} or v
             end
         end
+        if FQL.SyncTrackedQuestsWithLog then
+            FQL.SyncTrackedQuestsWithLog()
+        end
 
         FQL.selectedQuestID = shupazForeverQuestLogCharDB.selectedQuestID
         SetupMapAndBindingHooks()
@@ -308,7 +359,22 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     if event == "UNIT_QUEST_LOG_CHANGED" and arg1 ~= "player" then
+        if type(arg1) == "string" and arg1:match("^party%d+$") and FQL.frame and FQL.frame:IsShown() then
+            FQL:Refresh()
+        end
         return
+    end
+
+    if event == "QUEST_ACCEPTED" then
+        AutoTrackAcceptedQuest(arg1, arg2)
+    elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
+        local removedID = SafeNum(arg1)
+        if removedID and shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.trackedQuests then
+            shupazForeverQuestLogCharDB.trackedQuests[removedID] = nil
+        end
+        if FQL.PromoteTrackedQuestToNative then
+            FQL.PromoteTrackedQuestToNative()
+        end
     end
 
     local isWatchOrQuestChange = (

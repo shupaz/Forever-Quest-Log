@@ -5,7 +5,7 @@ end
 _G.shupaz_ForeverQuestLog = FQL
 
 FQL.ADDON_NAME = ADDON_NAME or "shupaz_ForeverQuestLog"
-FQL.VERSION = "1.0.7"
+FQL.VERSION = "1.0.8"
 
 local MIN_SCALE, MAX_SCALE = 0.6, 1.6
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 730, 520
@@ -23,6 +23,7 @@ local DB_DEFAULTS = {
     showQuestLevels = true,
     showTooltips = true,
     questLogFontScale = 1.0,
+    autoTrackQuests = true,
     trackerByZone = true,
     trackerSortMode = "AUTO",
     trackerCurrentZoneFirst = true,
@@ -36,6 +37,7 @@ FQL.DB_DEFAULTS = DB_DEFAULTS
 local CHAR_DEFAULTS = {
     collapsedHeaders = {},
     collapsedTrackerZones = {},
+    trackedQuests = {},
     selectedQuestID = nil,
 }
 FQL.CHAR_DEFAULTS = CHAR_DEFAULTS
@@ -504,7 +506,7 @@ local function IsQuestCompleteOrFailed(questID, infoComplete)
     return 0
 end
 
-local function IsQuestWatchedByID(questID, logIndex)
+local function IsNativeQuestWatchedByID(questID, logIndex)
     questID = SafeNum(questID)
     if not questID or questID <= 0 then return false end
     if C_QuestLog and C_QuestLog.GetQuestWatchType then
@@ -520,32 +522,101 @@ local function IsQuestWatchedByID(questID, logIndex)
     return false
 end
 
-local function SetQuestWatchedByID(questID, logIndex, shouldWatch)
+local function IsQuestWatchedByID(questID, logIndex)
+    questID = SafeNum(questID)
+    if not questID or questID <= 0 then return false end
+    if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.trackedQuests and shupazForeverQuestLogCharDB.trackedQuests[questID] == true then
+        return true
+    end
+    return IsNativeQuestWatchedByID(questID, logIndex)
+end
+
+local function TryAddNativeQuestWatch(questID, logIndex)
+    local added = false
+    if C_QuestLog and C_QuestLog.AddQuestWatch then
+        local ok, res = pcall(C_QuestLog.AddQuestWatch, questID)
+        if ok and res ~= false then
+            added = IsNativeQuestWatchedByID(questID, logIndex)
+        end
+        if not added and Enum and Enum.QuestWatchType and Enum.QuestWatchType.Manual then
+            pcall(C_QuestLog.AddQuestWatch, questID, Enum.QuestWatchType.Manual)
+            added = IsNativeQuestWatchedByID(questID, logIndex)
+        end
+    end
+    if not added and AddQuestWatch and logIndex then
+        pcall(AddQuestWatch, logIndex)
+        added = IsNativeQuestWatchedByID(questID, logIndex)
+    end
+    return added
+end
+
+local function PromoteTrackedQuestToNative()
+    if not shupazForeverQuestLogCharDB or not shupazForeverQuestLogCharDB.trackedQuests then return end
+    for qid, isTracked in pairs(shupazForeverQuestLogCharDB.trackedQuests) do
+        if isTracked == true then
+            local idx = GetLogIndexForQuest(qid)
+            if idx and not IsNativeQuestWatchedByID(qid, idx) then
+                if not TryAddNativeQuestWatch(qid, idx) then
+                    break
+                end
+            end
+        end
+    end
+end
+
+local function SyncTrackedQuestsWithLog()
+    if not shupazForeverQuestLogCharDB then return end
+    shupazForeverQuestLogCharDB.trackedQuests = shupazForeverQuestLogCharDB.trackedQuests or {}
+    local tracked = shupazForeverQuestLogCharDB.trackedQuests
+
+    -- Remove quests that are no longer in the player's quest log
+    for qid in pairs(tracked) do
+        if not GetLogIndexForQuest(qid) then
+            tracked[qid] = nil
+        end
+    end
+
+    -- Seed any natively watched quests into the custom tracked set
+    local numShown = GetNumLogEntries()
+    for i = 1, numShown do
+        local info = GetLogEntryInfo(i)
+        if info and not info.isHeader and info.questID and info.questID > 0 then
+            if IsNativeQuestWatchedByID(info.questID, i) then
+                tracked[info.questID] = true
+            end
+        end
+    end
+end
+
+local function SetQuestWatchedByID(questID, logIndex, shouldWatch, skipPromote)
     questID = SafeNum(questID)
     if not questID or questID <= 0 then return end
     logIndex = SafeNum(logIndex) or GetLogIndexForQuest(questID)
-    local watched = IsQuestWatchedByID(questID, logIndex)
-    if shouldWatch and not watched then
-        local added = false
-        if C_QuestLog and C_QuestLog.AddQuestWatch then
-            local ok, res = pcall(C_QuestLog.AddQuestWatch, questID)
-            if ok and res ~= false then
-                added = IsQuestWatchedByID(questID, logIndex)
+    if shupazForeverQuestLogCharDB then
+        shupazForeverQuestLogCharDB.trackedQuests = shupazForeverQuestLogCharDB.trackedQuests or {}
+    end
+    local nativeWatched = IsNativeQuestWatchedByID(questID, logIndex)
+    if shouldWatch then
+        if shupazForeverQuestLogCharDB then
+            shupazForeverQuestLogCharDB.trackedQuests[questID] = true
+        end
+        if not nativeWatched then
+            TryAddNativeQuestWatch(questID, logIndex)
+        end
+    else
+        if shupazForeverQuestLogCharDB and shupazForeverQuestLogCharDB.trackedQuests then
+            shupazForeverQuestLogCharDB.trackedQuests[questID] = nil
+        end
+        if nativeWatched then
+            if C_QuestLog and C_QuestLog.RemoveQuestWatch then
+                pcall(C_QuestLog.RemoveQuestWatch, questID)
             end
-            if not added and Enum and Enum.QuestWatchType and Enum.QuestWatchType.Manual then
-                pcall(C_QuestLog.AddQuestWatch, questID, Enum.QuestWatchType.Manual)
-                added = IsQuestWatchedByID(questID, logIndex)
+            if RemoveQuestWatch and logIndex then
+                pcall(RemoveQuestWatch, logIndex)
             end
-        end
-        if not added and AddQuestWatch and logIndex then
-            pcall(AddQuestWatch, logIndex)
-        end
-    elseif not shouldWatch then
-        if C_QuestLog and C_QuestLog.RemoveQuestWatch then
-            pcall(C_QuestLog.RemoveQuestWatch, questID)
-        end
-        if RemoveQuestWatch and logIndex then
-            pcall(RemoveQuestWatch, logIndex)
+            if not skipPromote then
+                PromoteTrackedQuestToNative()
+            end
         end
     end
 end
@@ -575,6 +646,41 @@ local function SetQuestSuperTracked(questID)
     if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID and questID then
         pcall(C_SuperTrack.SetSuperTrackedQuestID, questID)
     end
+end
+
+local function GetQuestPartyCount(questID, logIndex)
+    questID = SafeNum(questID)
+    if not questID or questID <= 0 then return 0, nil end
+    local numParty = (GetNumSubgroupMembers and GetNumSubgroupMembers()) or 0
+    if numParty <= 0 then return 0, nil end
+
+    local count = 0
+    local names = {}
+    for i = 1, math.min(4, numParty) do
+        local unit = "party" .. i
+        local onQuest = false
+        if C_QuestLog and C_QuestLog.IsUnitOnQuest then
+            local ok, res = pcall(C_QuestLog.IsUnitOnQuest, unit, questID)
+            if ok and res == true then
+                onQuest = true
+            end
+        elseif IsUnitOnQuest and logIndex then
+            local ok, res = pcall(IsUnitOnQuest, logIndex, unit)
+            if ok and (res == true or res == 1) then
+                onQuest = true
+            end
+        end
+        if onQuest then
+            count = count + 1
+            if UnitName then
+                local okN, uName = pcall(UnitName, unit)
+                if okN and SafeStr(uName) then
+                    names[#names + 1] = uName
+                end
+            end
+        end
+    end
+    return count, names
 end
 
 local function GetQuestTagDetails(questID, info)
@@ -654,28 +760,16 @@ local function GetDifficultyColor(level, questID)
     -- Robust Classic level-differential calculation
     local levelDiff = level - playerLevel
 
-    -- Determine trivial (grey) range
-    local greyRange = 5
-    if UnitQuestTrivialLevelRangeScaling then
-        local ok, gr = pcall(UnitQuestTrivialLevelRangeScaling, "player")
-        if ok and SafeNum(gr) and gr > 0 then
-            greyRange = gr
-        end
-    elseif GetQuestGreenRange then
-        local ok, gr = pcall(GetQuestGreenRange, playerLevel)
-        if ok and SafeNum(gr) and gr > 0 then
-            greyRange = gr
-        end
+    -- Classic / Forever trivial (grey) range formula (matches Questie & Classic map tooltips)
+    local greyRange
+    if playerLevel <= 5 then
+        greyRange = 2
+    elseif playerLevel <= 39 then
+        greyRange = math.floor(playerLevel / 10) + 3
+    elseif playerLevel <= 59 then
+        greyRange = math.floor(playerLevel / 5) - 1
     else
-        if playerLevel <= 5 then
-            greyRange = 2
-        elseif playerLevel <= 39 then
-            greyRange = math.floor(playerLevel / 10) + 3
-        elseif playerLevel <= 59 then
-            greyRange = math.floor(playerLevel / 5) - 1
-        else
-            greyRange = 9
-        end
+        greyRange = 9
     end
 
     local qdc = _G.QuestDifficultyColors
@@ -1153,11 +1247,15 @@ FQL.GetLogEntryInfo           = GetLogEntryInfo
 FQL.GetLogIndexForQuest       = GetLogIndexForQuest
 FQL.SelectLogQuest            = SelectLogQuest
 FQL.IsQuestCompleteOrFailed   = IsQuestCompleteOrFailed
+FQL.IsNativeQuestWatchedByID  = IsNativeQuestWatchedByID
+FQL.SyncTrackedQuestsWithLog    = SyncTrackedQuestsWithLog
+FQL.PromoteTrackedQuestToNative = PromoteTrackedQuestToNative
 FQL.IsQuestWatchedByID        = IsQuestWatchedByID
 FQL.SetQuestWatchedByID       = SetQuestWatchedByID
 FQL.ToggleQuestWatchByID      = ToggleQuestWatchByID
 FQL.IsQuestSuperTracked       = IsQuestSuperTracked
 FQL.SetQuestSuperTracked      = SetQuestSuperTracked
+FQL.GetQuestPartyCount        = GetQuestPartyCount
 FQL.GetQuestTagDetails        = GetQuestTagDetails
 FQL.GetDifficultyColor        = GetDifficultyColor
 FQL.GetQuestTextAndObjectives = GetQuestTextAndObjectives

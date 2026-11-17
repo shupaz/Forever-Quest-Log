@@ -4,6 +4,22 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.8] - 2026-11-17
+
+### Added
+- **Auto-Track Accepted Quests**: Newly accepted quests are now automatically tracked on `QUEST_ACCEPTED` (supporting both modern and legacy event payloads), with an **Auto-Track Accepted Quests** toggle under **Objective Tracker** settings (`autoTrackQuests = true` by default).
+- **Full 40-Quest Tracking Bypass**: Bypassed Blizzard's 25-quest `C_QuestLog.AddQuestWatch` cap by storing all tracked quests in `shupazForeverQuestLogCharDB.trackedQuests` while keeping up to 25 native Blizzard watch slots active and automatically promoting overflow quests when native slots free up.
+- **Overflow Objective Tracker Blocks**: Added pooled custom tracker blocks in `src/Tracker.lua` for tracked quests beyond slot 25, matching Blizzard's native font/size/shadow, `[level]` prefix, POI circle buttons (`POIButtonTemplate`), and `MenuUtil.CreateContextMenu` right-click menu (**Focus**, **Open Quest Details**, **Open Quest Map**, **Untrack**, **Abandon**).
+- **Party Shared Quest Notation**: Displays a `(N)` count prefix in the Quest Log list and `Party on Quest (N): ...` in row hover tooltips when party members share a quest, with live updates on `UNIT_QUEST_LOG_CHANGED` for `party1`–`party4`.
+- **Auto-Scroll Selected Quest into View**: Opening the Quest Log from the Objective Tracker (`OpenToQuest`) now automatically scrolls the quest list so the selected quest is visible.
+
+### Fixed
+- **Track All Completeness & Dirty Retry**: Updated `ToggleTrackAllQuests()` to iterate deterministically with a follow-up verification pass and `skipPromote` optimization when untracking all; updated `Tracker.lua` full-height retry/refresh paths to call `MarkDirty()` and `Update(..., 100000, true)`.
+- **Multiline Wrapping Overlap**: Set explicit widths on overflow block headers and objective lines before measuring height (and recalculated on 9px scrollbar narrowing) so wrapped multiline quests no longer overlap.
+- **Classic Quest Difficulty Colors**: Updated `GetDifficultyColor()` in `src/Utils.lua` to use the Classic/Forever green-range formula directly instead of `16001`'s Retail-scaled `GetQuestGreenRange`/`UnitQuestTrivialLevelRangeScaling`, matching World Map quest colors.
+
+---
+
 ## [v1.0.7] - 2026-11-16
 
 ### Fixed

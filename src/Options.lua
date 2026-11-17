@@ -382,6 +382,14 @@ function FQL:CreateOptionsPanel()
                 function() FQL:RefreshObjectiveTracker() end
             )
 
+            AddCheckbox(
+                "autoTrackQuests",
+                "FQL_AUTO_TRACK_QUESTS",
+                "Auto-Track Accepted Quests",
+                "Automatically adds newly accepted quests to the Objective Tracker.",
+                nil
+            )
+
             -- ========================================================
             -- Section 3: World Map Integration
             -- ========================================================

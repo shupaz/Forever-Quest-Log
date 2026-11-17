@@ -26,6 +26,7 @@ local BState = setmetatable({}, { __mode = "k" })
 local FState = setmetatable({}, { __mode = "k" })
 local WheelHooked = setmetatable({}, { __mode = "k" })
 local CustomZoneHeaders = setmetatable({}, { __mode = "k" })
+local CustomOverflowBlocks = setmetatable({}, { __mode = "k" })
 
 local function TS(tracker)
     if not tracker then return {} end
@@ -580,7 +581,7 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
     end
 
     local function InspectCandidateBlock(block, keyQuestID, fromActiveTable)
-        if not IsRealTrackerBlock(block) or seenBlocks[block] then return end
+        if not IsRealTrackerBlock(block) or seenBlocks[block] or CustomOverflowBlocks[block] then return end
         local bs = BS(block)
         if not (fromActiveTable or block:IsShown() or bs.hiddenByZone or block.used) then return end
 
@@ -651,7 +652,7 @@ local function CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQ
     local function ScanChildrenForAttachments(parentFrame)
         if not parentFrame or not parentFrame.GetChildren then return end
         for _, child in ipairs({ parentFrame:GetChildren() }) do
-            if not seenBlocks[child] and not CustomZoneHeaders[child] then
+            if not seenBlocks[child] and not CustomZoneHeaders[child] and not CustomOverflowBlocks[child] then
                 local cQuestID = SafeNum(child.questID)
                 if not cQuestID and type(child.GetQuestID) == "function" then
                     local ok, id = pcall(child.GetQuestID, child)
@@ -828,6 +829,389 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
     if block.HeaderButton and block.HeaderButton.GetFontString then
         ColorizeFontString(block.HeaderButton:GetFontString())
     end
+end
+
+local function HideAllOverflowQuestBlocks(tracker)
+    local ts = TState[tracker]
+    if not ts or not ts.overflowBlocks then return end
+    for _, b in ipairs(ts.overflowBlocks) do
+        b:Hide()
+    end
+end
+
+local function GetOverflowQuestObjectives(questID, logIndex, completeState)
+    local objectives = {}
+    if C_QuestLog and C_QuestLog.GetQuestObjectives and questID and questID > 0 then
+        local ok, list = pcall(C_QuestLog.GetQuestObjectives, questID)
+        if ok and type(list) == "table" then
+            for _, o in ipairs(list) do
+                if type(o) == "table" and SafeStr(o.text) then
+                    objectives[#objectives + 1] = {
+                        text = o.text,
+                        finished = o.finished == true,
+                    }
+                end
+            end
+        end
+    end
+    if #objectives == 0 and GetNumQuestLeaderBoards and GetQuestLogLeaderBoard and logIndex then
+        local okN, num = pcall(GetNumQuestLeaderBoards, logIndex)
+        num = (okN and SafeNum(num)) or 0
+        for i = 1, num do
+            local okL, desc, _, finished = pcall(GetQuestLogLeaderBoard, i, logIndex)
+            if okL and SafeStr(desc) then
+                objectives[#objectives + 1] = {
+                    text = desc,
+                    finished = finished == true or finished == 1,
+                }
+            end
+        end
+    end
+    if #objectives == 0 and completeState == 1 then
+        objectives[1] = {
+            text = _G.QUEST_WATCH_QUEST_READY or "Ready for turn-in",
+            finished = true,
+        }
+    end
+    return objectives
+end
+
+local function GetNativeBlockFontSample(tracker)
+    if not tracker then return nil end
+    local function SampleFromBlock(b)
+        if not b or CustomOverflowBlocks[b] then return nil end
+        if not b.HeaderText or type(b.HeaderText.GetFont) ~= "function" then return nil end
+        local okH, hFont, hSize, hFlags = pcall(b.HeaderText.GetFont, b.HeaderText)
+        if not okH or not hFont then return nil end
+        local sample = {
+            headerFont = hFont,
+            headerSize = SafeNum(hSize) or 12,
+            headerFlags = SafeStr(hFlags) or "",
+            hasLevelPrefix = false,
+        }
+        if type(b.HeaderText.GetText) == "function" then
+            local okT, hTxt = pcall(b.HeaderText.GetText, b.HeaderText)
+            if okT and type(hTxt) == "string" then
+                local clean = hTxt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                if clean:match("^%[%d+[^%]]*%]%s+") then
+                    sample.hasLevelPrefix = true
+                end
+            end
+        end
+        if type(b.usedLines) == "table" then
+            for _, ln in pairs(b.usedLines) do
+                if type(ln) == "table" and ln.Text and type(ln.Text.GetFont) == "function" then
+                    local okL, lFont, lSize, lFlags = pcall(ln.Text.GetFont, ln.Text)
+                    if okL and lFont then
+                        sample.lineFont = lFont
+                        sample.lineSize = SafeNum(lSize) or 12
+                        sample.lineFlags = SafeStr(lFlags) or ""
+                        break
+                    end
+                end
+            end
+        end
+        return sample
+    end
+
+    if tracker.firstBlock then
+        local curr = tracker.firstBlock
+        local guard = 0
+        while curr and guard < 20 do
+            guard = guard + 1
+            local s = SampleFromBlock(curr)
+            if s then return s end
+            curr = curr.nextBlock
+        end
+    end
+    if type(tracker.usedBlocks) == "table" then
+        for _, templateBlocks in pairs(tracker.usedBlocks) do
+            if type(templateBlocks) == "table" then
+                for _, b in pairs(templateBlocks) do
+                    local s = SampleFromBlock(b)
+                    if s then return s end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ApplyOverflowBaseFont(fs, fontName, fontSize, fontFlags)
+    if not fs or not fontName then return end
+    local fst = FS(fs)
+    fst.origFont = fontName
+    fst.origSize = fontSize or 12
+    fst.origFlags = fontFlags or ""
+    pcall(fs.SetFont, fs, fst.origFont, fst.origSize, fst.origFlags)
+end
+
+local function ShowOverflowQuestContextMenu(block, questID, logIndex, title)
+    if _G.MenuUtil and type(_G.MenuUtil.CreateContextMenu) == "function" then
+        _G.MenuUtil.CreateContextMenu(block, function(_, rootDescription)
+            rootDescription:CreateTitle(title or ("Quest " .. tostring(questID)))
+            local isSuperTracked = FQL.IsQuestSuperTracked and FQL.IsQuestSuperTracked(questID)
+            rootDescription:CreateButton(isSuperTracked and "Unfocus" or "Focus", function()
+                if FQL.SetQuestSuperTracked then
+                    FQL.SetQuestSuperTracked(isSuperTracked and 0 or questID)
+                end
+            end)
+            rootDescription:CreateButton("Open Quest Details", function()
+                if _G.WorldMapFrame and _G.WorldMapFrame:IsShown() and CanChangeFrame(_G.WorldMapFrame) and HideUIPanel then
+                    pcall(HideUIPanel, _G.WorldMapFrame)
+                end
+                if FQL.OpenToQuest then
+                    FQL:OpenToQuest(questID)
+                end
+            end)
+            rootDescription:CreateButton("Open Quest Map", function()
+                if FQL.ShowQuestOnWorldMap then
+                    FQL.ShowQuestOnWorldMap(questID)
+                end
+            end)
+            rootDescription:CreateButton("Untrack", function()
+                if FQL.ToggleQuestWatchByID then
+                    FQL.ToggleQuestWatchByID(questID, logIndex)
+                end
+                if FQL.Refresh then
+                    FQL:Refresh()
+                end
+            end)
+            rootDescription:CreateButton("Abandon", function()
+                if FQL.AbandonSelectedQuest then
+                    FQL.AbandonSelectedQuest(questID, title)
+                end
+            end)
+        end)
+        return
+    end
+    if FQL.ShowQuestContextMenu then
+        FQL:ShowQuestContextMenu(block, {
+            questID = questID,
+            logIndex = logIndex,
+            title = title,
+        })
+    end
+end
+
+local function AcquireOverflowQuestBlock(tracker, contents, index, qid, qMeta, width)
+    local ts = TS(tracker)
+    ts.overflowBlocks = ts.overflowBlocks or {}
+    local block = ts.overflowBlocks[index]
+    local blockWidth = (width and width > 80) and width or 220
+    local fontPath = FQL:GetTrackerFontPath()
+    local nativeSample = GetNativeBlockFontSample(tracker)
+
+    if not block then
+        block = CreateFrame("Button", nil, contents)
+        block:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        CustomOverflowBlocks[block] = true
+
+        block.HeaderText = block:CreateFontString(nil, "OVERLAY", _G.ObjectiveFont and "ObjectiveFont" or "GameFontNormal")
+        block.HeaderText:SetPoint("TOPLEFT", block, "TOPLEFT", 0, 0)
+        block.HeaderText:SetPoint("RIGHT", block, "RIGHT", -4, 0)
+        block.HeaderText:SetJustifyH("LEFT")
+        block.HeaderText:SetWordWrap(true)
+        block.HeaderText:SetShadowOffset(1, -1)
+        block.HeaderText:SetShadowColor(0, 0, 0, 1)
+
+        local okPOI, poiBtn = pcall(CreateFrame, "Button", nil, block, "POIButtonTemplate")
+        if not okPOI or not poiBtn then
+            poiBtn = CreateFrame("Button", nil, block)
+            poiBtn:SetSize(18, 18)
+            poiBtn.bg = poiBtn:CreateTexture(nil, "BACKGROUND")
+            poiBtn.bg:SetAllPoints()
+            poiBtn.bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+            poiBtn.bg:SetVertexColor(0.15, 0.12, 0.05, 0.85)
+            poiBtn.icon = poiBtn:CreateTexture(nil, "ARTWORK")
+            poiBtn.icon:SetSize(12, 12)
+            poiBtn.icon:SetPoint("CENTER")
+            poiBtn:SetScript("OnClick", function(self)
+                local pQID = SafeNum(self.questID)
+                if not pQID or pQID <= 0 then return end
+                if FQL.IsQuestSuperTracked and FQL.IsQuestSuperTracked(pQID) then
+                    if FQL.SetQuestSuperTracked then FQL.SetQuestSuperTracked(0) end
+                elseif FQL.SetQuestSuperTracked then
+                    FQL.SetQuestSuperTracked(pQID)
+                end
+            end)
+        end
+        poiBtn:SetPoint("TOPRIGHT", block.HeaderText, "TOPLEFT", -4, 2)
+        block.poiButton = poiBtn
+
+        block.usedLines = {}
+        block:SetScript("OnEnter", function(self)
+            if self.HeaderText then
+                self.HeaderText:SetAlpha(0.85)
+            end
+        end)
+        block:SetScript("OnLeave", function(self)
+            if self.HeaderText then
+                self.HeaderText:SetAlpha(1)
+            end
+        end)
+        block:SetScript("OnClick", function(self, button)
+            local clickQID = SafeNum(self.questID)
+            if not clickQID or clickQID <= 0 then return end
+            if IsModifiedClick and IsModifiedClick("QUESTWATCHTOGGLE") then
+                if FQL.ToggleQuestWatchByID then
+                    FQL.ToggleQuestWatchByID(clickQID, self.logIndex)
+                end
+                return
+            elseif IsModifiedClick and IsModifiedClick("CHATLINK") then
+                if FQL.TryInsertQuestChatLink and FQL.TryInsertQuestChatLink(clickQID, self.logIndex) then
+                    return
+                end
+            end
+            if button == "RightButton" then
+                ShowOverflowQuestContextMenu(self, clickQID, self.logIndex, self.questTitle or ("Quest " .. tostring(clickQID)))
+                return
+            elseif button == "LeftButton" then
+                if _G.WorldMapFrame and _G.WorldMapFrame:IsShown() and CanChangeFrame(_G.WorldMapFrame) and HideUIPanel then
+                    pcall(HideUIPanel, _G.WorldMapFrame)
+                end
+                if FQL.OpenToQuest then
+                    FQL:OpenToQuest(clickQID)
+                end
+            end
+        end)
+
+        ts.overflowBlocks[index] = block
+    end
+
+    block.id = qid
+    block.questID = qid
+    block.logIndex = qMeta and qMeta.logIndex
+    block:SetWidth(blockWidth)
+
+    if block.poiButton then
+        local poi = block.poiButton
+        poi.questID = qid
+        if poi.SetQuestID then
+            pcall(poi.SetQuestID, poi, qid)
+        end
+        if poi.SetStyle and _G.POIButtonUtil and _G.POIButtonUtil.Style then
+            local style = (qMeta and qMeta.completeState == 1) and _G.POIButtonUtil.Style.QuestComplete or _G.POIButtonUtil.Style.QuestInProgress
+            if style then
+                pcall(poi.SetStyle, poi, style)
+            end
+        end
+        if poi.UpdateButtonStyle then
+            pcall(poi.UpdateButtonStyle, poi)
+        elseif poi.icon then
+            if qMeta and qMeta.completeState == 1 then
+                poi.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon")
+            else
+                poi.icon:SetTexture("Interface\\Common\\Indicator-Yellow")
+            end
+        end
+        poi:Show()
+    end
+
+    if nativeSample and nativeSample.headerFont then
+        ApplyOverflowBaseFont(block.HeaderText, nativeSample.headerFont, nativeSample.headerSize, nativeSample.headerFlags)
+    end
+    ApplyFontToFontString(block.HeaderText, fontPath)
+    block.HeaderText:SetWidth(math.max(40, blockWidth - 4))
+    local rawTitle = (qMeta and SafeStr(qMeta.title)) or ("Quest " .. tostring(qid))
+    block.questTitle = rawTitle
+    local title = rawTitle
+    if nativeSample and nativeSample.hasLevelPrefix and qMeta and SafeNum(qMeta.level) and qMeta.level > 0 then
+        title = "[" .. tostring(qMeta.level) .. "] " .. rawTitle
+    end
+    block.HeaderText:SetText(title)
+    local headerHeight = math.max(14, SafeNum(block.HeaderText:GetStringHeight()) or 14)
+
+    local objectives = GetOverflowQuestObjectives(qid, qMeta and qMeta.logIndex, qMeta and qMeta.completeState)
+    local totalHeight = headerHeight
+    local prevAnchor = block.HeaderText
+    local lineWidth = math.max(40, blockWidth - 4)
+    local textWidth = math.max(30, lineWidth - 10)
+    local lineFontObj = _G.ObjectiveFont and "ObjectiveFont" or "GameFontHighlight"
+
+    for i, obj in ipairs(objectives) do
+        local line = block.usedLines[i]
+        if not line then
+            line = CreateFrame("Frame", nil, block)
+            line.Dash = line:CreateFontString(nil, "OVERLAY", lineFontObj)
+            line.Dash:SetPoint("TOPLEFT", line, "TOPLEFT", 0, 0)
+            line.Dash:SetText("-")
+            line.Dash:SetShadowOffset(1, -1)
+            line.Dash:SetShadowColor(0, 0, 0, 1)
+            line.Text = line:CreateFontString(nil, "OVERLAY", lineFontObj)
+            line.Text:SetPoint("TOPLEFT", line.Dash, "TOPRIGHT", 3, 0)
+            line.Text:SetPoint("RIGHT", line, "RIGHT", 0, 0)
+            line.Text:SetJustifyH("LEFT")
+            line.Text:SetWordWrap(true)
+            line.Text:SetShadowOffset(1, -1)
+            line.Text:SetShadowColor(0, 0, 0, 1)
+            block.usedLines[i] = line
+        end
+
+        if nativeSample and nativeSample.lineFont then
+            ApplyOverflowBaseFont(line.Dash, nativeSample.lineFont, nativeSample.lineSize, nativeSample.lineFlags)
+            ApplyOverflowBaseFont(line.Text, nativeSample.lineFont, nativeSample.lineSize, nativeSample.lineFlags)
+        end
+        ApplyFontToFontString(line.Dash, fontPath)
+        ApplyFontToFontString(line.Text, fontPath)
+        line:ClearAllPoints()
+        line:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", 0, -2)
+        line:SetPoint("RIGHT", block, "RIGHT", -4, 0)
+        line:SetWidth(lineWidth)
+        line.Text:SetWidth(textWidth)
+
+        line.Text:SetText(obj.text)
+        if obj.finished and qMeta and qMeta.completeState ~= 1 then
+            line.Dash:SetTextColor(0.55, 0.55, 0.55)
+            line.Text:SetTextColor(0.55, 0.55, 0.55)
+        else
+            line.Dash:SetTextColor(0.90, 0.90, 0.90)
+            line.Text:SetTextColor(0.90, 0.90, 0.90)
+        end
+
+        local lineH = math.max(12, SafeNum(line.Text:GetStringHeight()) or 12)
+        line:SetHeight(lineH)
+        line:Show()
+
+        totalHeight = totalHeight + 2 + lineH
+        prevAnchor = line
+    end
+
+    for i = #objectives + 1, #block.usedLines do
+        block.usedLines[i]:Hide()
+    end
+
+    block.height = totalHeight + 2
+    block:SetHeight(block.height)
+    BS(block).height = block.height
+    BS(block).hiddenByZone = nil
+    block:Show()
+    return block
+end
+
+local function RelayoutOverflowBlockWidth(block, blockWidth)
+    if not block or not blockWidth or blockWidth <= 80 then return nil end
+    block:SetWidth(blockWidth)
+    if not block.HeaderText then return nil end
+    block.HeaderText:SetWidth(math.max(40, blockWidth - 4))
+    local totalHeight = math.max(14, SafeNum(block.HeaderText:GetStringHeight()) or 14)
+    local lineWidth = math.max(40, blockWidth - 4)
+    local textWidth = math.max(30, lineWidth - 10)
+    for _, line in ipairs(block.usedLines or {}) do
+        if line:IsShown() then
+            line:SetWidth(lineWidth)
+            if line.Text then
+                line.Text:SetWidth(textWidth)
+                local lineH = math.max(12, SafeNum(line.Text:GetStringHeight()) or 12)
+                line:SetHeight(lineH)
+                totalHeight = totalHeight + 2 + lineH
+            end
+        end
+    end
+    block.height = totalHeight + 2
+    block:SetHeight(block.height)
+    BS(block).height = block.height
+    return block.height
 end
 
 function FQL:ApplyTrackerStyle(tracker)
@@ -1323,6 +1707,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
 
     if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
         HideAllTrackerZoneHeaders(tracker)
+        HideAllOverflowQuestBlocks(tracker)
         if ts.headerZoneBtn then ts.headerZoneBtn:Hide() end
         if ts.scrollBar then ts.scrollBar:Hide() end
         if contents.GetChildren then
@@ -1349,6 +1734,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
 
     if (tracker.IsCollapsed and tracker:IsCollapsed()) or not contents:IsShown() then
         HideAllTrackerZoneHeaders(tracker)
+        HideAllOverflowQuestBlocks(tracker)
         if ts.headerZoneBtn then ts.headerZoneBtn:Hide() end
         if ts.scrollBar then ts.scrollBar:Hide() end
         return
@@ -1365,6 +1751,45 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     end
 
     local questBlocks, topBanners = CollectTrackerBlocksAndAttachments(tracker, questToZone, titleToQuestID)
+    HideAllOverflowQuestBlocks(tracker)
+
+    if tracker == _G.QuestObjectiveTracker or not _G.QuestObjectiveTracker then
+        local presentQuestIDs = {}
+        for _, entry in ipairs(questBlocks) do
+            if entry.questID then
+                presentQuestIDs[entry.questID] = true
+            end
+        end
+        if _G.CampaignQuestObjectiveTracker and _G.CampaignQuestObjectiveTracker ~= tracker then
+            local campBlocks = CollectTrackerBlocksAndAttachments(_G.CampaignQuestObjectiveTracker, questToZone, titleToQuestID)
+            for _, entry in ipairs(campBlocks) do
+                if entry.questID then
+                    presentQuestIDs[entry.questID] = true
+                end
+            end
+        end
+
+        local overflowQuests = {}
+        for qid, qMeta in pairs(questToZone) do
+            if not presentQuestIDs[qid] and IsQuestWatchedByID(qid, qMeta.logIndex) then
+                overflowQuests[#overflowQuests + 1] = { qid = qid, meta = qMeta }
+            end
+        end
+        if #overflowQuests > 0 then
+            table.sort(overflowQuests, function(a, b)
+                return (a.meta.questOrder or 0) < (b.meta.questOrder or 0)
+            end)
+            local blockWidth = SafeNum(contents:GetWidth()) or 235
+            for idx, item in ipairs(overflowQuests) do
+                local overflowBlock = AcquireOverflowQuestBlock(tracker, contents, idx, item.qid, item.meta, blockWidth)
+                questBlocks[#questBlocks + 1] = {
+                    questID = item.qid,
+                    block = overflowBlock,
+                    attachments = {},
+                }
+            end
+        end
+    end
 
     if #questBlocks == 0 then
         HideAllTrackerZoneHeaders(tracker)
@@ -1799,7 +2224,12 @@ function FQL:ApplyTrackerZoneLayout(tracker)
                         b:SetPoint("RIGHT", contents, "RIGHT", effectiveRightOffset, 0)
                     end
                     if bWidth and bWidth > 80 then
-                        b:SetWidth(scrollbarPad > 0 and (bWidth - scrollbarPad) or bWidth)
+                        local targetW = scrollbarPad > 0 and (bWidth - scrollbarPad) or bWidth
+                        if CustomOverflowBlocks[b] and scrollbarPad > 0 then
+                            bHeight = RelayoutOverflowBlockWidth(b, targetW) or bHeight
+                        else
+                            b:SetWidth(targetW)
+                        end
                     end
                     if bHeight and bHeight > 8 then
                         b:SetHeight(bHeight)
@@ -1938,7 +2368,11 @@ local function HookSingleTrackerModule(tracker)
             if NeedsFullHeightRetry(self) then
                 if not s.retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and self.Update then
                     s.retryingFullHeight = true
-                    pcall(self.Update, self, 100000, false)
+                    self.availableHeight = 100000
+                    if self.MarkDirty then
+                        pcall(self.MarkDirty, self)
+                    end
+                    pcall(self.Update, self, 100000, true)
                     s.retryingFullHeight = false
                     return
                 end
@@ -1987,20 +2421,23 @@ local function SetupObjectiveTrackerHooks()
         containerHooked = true
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
-                if _G.QuestObjectiveTracker then
-                    if NeedsFullHeightRetry(_G.QuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.QuestObjectiveTracker.Update then
-                        pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
+                local function UpdateOrApplyModule(mod)
+                    if not mod then return end
+                    local s = TS(mod)
+                    if NeedsFullHeightRetry(mod) and not s.retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and mod.Update then
+                        s.retryingFullHeight = true
+                        mod.availableHeight = 100000
+                        if mod.MarkDirty then
+                            pcall(mod.MarkDirty, mod)
+                        end
+                        pcall(mod.Update, mod, 100000, true)
+                        s.retryingFullHeight = false
                     else
-                        FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
+                        FQL:ApplyTrackerZoneLayout(mod)
                     end
                 end
-                if _G.CampaignQuestObjectiveTracker then
-                    if NeedsFullHeightRetry(_G.CampaignQuestObjectiveTracker) and not (InCombatLockdown and InCombatLockdown()) and _G.CampaignQuestObjectiveTracker.Update then
-                        pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
-                    else
-                        FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
-                    end
-                end
+                UpdateOrApplyModule(_G.QuestObjectiveTracker)
+                UpdateOrApplyModule(_G.CampaignQuestObjectiveTracker)
             end)
         end
     end
@@ -2035,7 +2472,7 @@ function FQL:RefreshObjectiveTracker()
                 pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
             end
             if _G.QuestObjectiveTracker.Update then
-                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, false)
+                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, true)
             end
         end
         if _G.CampaignQuestObjectiveTracker then
@@ -2044,7 +2481,7 @@ function FQL:RefreshObjectiveTracker()
                 pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
             end
             if _G.CampaignQuestObjectiveTracker.Update then
-                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, false)
+                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, true)
             end
         end
     else

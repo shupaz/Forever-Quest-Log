@@ -23,6 +23,7 @@ local SetQuestWatchedByID       = FQL.SetQuestWatchedByID
 local ToggleQuestWatchByID      = FQL.ToggleQuestWatchByID
 local IsQuestSuperTracked       = FQL.IsQuestSuperTracked
 local SetQuestSuperTracked      = FQL.SetQuestSuperTracked
+local GetQuestPartyCount        = FQL.GetQuestPartyCount
 local GetQuestTagDetails        = FQL.GetQuestTagDetails
 local GetDifficultyColor        = FQL.GetDifficultyColor
 local GetQuestTextAndObjectives = FQL.GetQuestTextAndObjectives
@@ -1622,6 +1623,12 @@ local function AcquireListRow(frame, index)
         local tagStr = q.tagName and (" (" .. q.tagName .. ")") or ""
         GameTooltip:AddLine("Level " .. tostring(q.level or "?") .. tagStr .. (q.headerTitle and (" - " .. q.headerTitle) or ""), 0.85, 0.82, 0.72)
 
+        local partyCount, partyNames = GetQuestPartyCount(q.questID, q.logIndex)
+        if partyCount > 0 then
+            local namesStr = (partyNames and #partyNames > 0) and (": " .. table.concat(partyNames, ", ")) or ""
+            GameTooltip:AddLine("Party on Quest (" .. partyCount .. ")" .. namesStr, 0.40, 0.80, 1.00, true)
+        end
+
         local _, _, objs = GetQuestTextAndObjectives(q.questID, q.logIndex)
         if #objs > 0 then
             GameTooltip:AddLine(" ")
@@ -1746,6 +1753,7 @@ function FQL:ToggleAllHeaders()
     local collapsed = shupazForeverQuestLogCharDB.collapsedHeaders
 
     local anyExpanded = false
+    local selectedRowTop, selectedRowBottom = nil, nil
     for _, sec in ipairs(sections) do
         if #sec.quests > 0 and not collapsed[sec.title] then
             anyExpanded = true
@@ -1796,14 +1804,16 @@ function FQL:AreAllQuestsTracked()
 end
 
 function FQL:ToggleTrackAllQuests()
-    local _, allQuestsByID = self:BuildStructuredLog()
+    local sections, allQuestsByID = self:BuildStructuredLog()
     local hasAnyTracked, total = self:AreAllQuestsTracked()
     if total == 0 then return end
 
     -- If any quests are currently tracked, untrack them all. Otherwise, track all.
     local shouldWatch = not hasAnyTracked
-    for qid, q in pairs(allQuestsByID) do
-        SetQuestWatchedByID(qid, q.logIndex, shouldWatch)
+    for _, sec in ipairs(sections) do
+        for _, q in ipairs(sec.quests) do
+            SetQuestWatchedByID(q.questID, q.logIndex, shouldWatch, not shouldWatch)
+        end
     end
     if not shouldWatch and GetNumQuestWatches and RemoveQuestWatch then
         local numWatches = SafeNum(GetNumQuestWatches()) or 0
@@ -1821,6 +1831,21 @@ function FQL:ToggleTrackAllQuests()
     self:RefreshObjectiveTracker(true)
     if C_Timer and C_Timer.After then
         C_Timer.After(0.05, function()
+            if shouldWatch then
+                local retrySections = FQL:BuildStructuredLog()
+                local retriedAny = false
+                for _, sec in ipairs(retrySections) do
+                    for _, q in ipairs(sec.quests) do
+                        if not IsQuestWatchedByID(q.questID, q.logIndex) then
+                            SetQuestWatchedByID(q.questID, q.logIndex, true)
+                            retriedAny = true
+                        end
+                    end
+                end
+                if retriedAny and C_QuestLog and C_QuestLog.SortQuestWatches then
+                    pcall(C_QuestLog.SortQuestWatches)
+                end
+            end
             FQL:Refresh()
             FQL:RefreshObjectiveTracker(true)
         end)
@@ -1876,6 +1901,7 @@ function FQL:RefreshQuestList()
     frame.listContent:SetWidth(rowWidth)
 
     local anyExpanded = false
+    local selectedRowTop, selectedRowBottom = nil, nil
 
     for _, sec in ipairs(sections) do
         local matchingQuests = {}
@@ -1984,10 +2010,11 @@ function FQL:RefreshQuestList()
                         qRow.statusText:SetText("")
                     end
 
-                    local prefix = ""
+                    local partyCount = GetQuestPartyCount(q.questID, q.logIndex)
+                    local prefix = (partyCount > 0) and ("|cff66ccff(" .. partyCount .. ")|r ") or ""
                     if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showQuestLevels ~= false then
                         local lvlStr = (q.level and q.level > 0) and tostring(q.level) or "?"
-                        prefix = "[" .. lvlStr .. (q.tagAbbr or "") .. "] "
+                        prefix = prefix .. "[" .. lvlStr .. (q.tagAbbr or "") .. "] "
                     end
 
                     local rightPad = 6
@@ -2015,6 +2042,11 @@ function FQL:RefreshQuestList()
                     local rowHeight = math.max(22, stringHeight + 8)
                     qRow:SetHeight(rowHeight)
 
+                    if isSelected then
+                        selectedRowTop = yOffset
+                        selectedRowBottom = yOffset + rowHeight
+                    end
+
                     qRow:Show()
                     yOffset = yOffset + rowHeight
                 end
@@ -2034,6 +2066,27 @@ function FQL:RefreshQuestList()
     end
     frame.emptyListText:SetShown(rowIndex == 0)
     frame.listContent:SetHeight(math.max(1, yOffset))
+
+    if self._scrollSelectedQuestIntoView then
+        self._scrollSelectedQuestIntoView = false
+        if selectedRowTop and selectedRowBottom and frame.listScroll then
+            if frame.listScroll.UpdateScrollChildRect then
+                frame.listScroll:UpdateScrollChildRect()
+            end
+            local viewHeight = SafeNum(frame.listScroll:GetHeight()) or 0
+            if viewHeight <= 0 then
+                viewHeight = 400
+            end
+            local contentHeight = math.max(1, yOffset)
+            local maxScroll = math.max(0, contentHeight - viewHeight)
+            local curScroll = SafeNum(frame.listScroll:GetVerticalScroll()) or 0
+            if selectedRowTop < curScroll or selectedRowBottom > (curScroll + viewHeight) then
+                local rowH = selectedRowBottom - selectedRowTop
+                local targetScroll = math.max(0, math.min(maxScroll, selectedRowTop - math.max(0, (viewHeight - rowH) * 0.5)))
+                frame.listScroll:SetVerticalScroll(targetScroll)
+            end
+        end
+    end
 
     if frame.trackAllBtn then
         local hasAnyTracked, totalQuests = self:AreAllQuestsTracked()
