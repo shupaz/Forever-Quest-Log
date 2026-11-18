@@ -4,6 +4,15 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.10] - 2026-11-18
+
+### Fixed
+- **Edit Mode / Secret-Aura Taint on Level-Up**: Removed direct `availableHeight = 100000` assignments and `MarkDirty()` / `Update(...)` / `ObjectiveTrackerFrame:UpdateHeight()` calls from `src/Tracker.lua` and deferred tracker refreshes during combat lockdown, preventing `GetAuraDataByIndex(): Auras cannot be accessed when secret while tainted by 'shupaz_ForeverQuestLog'` in `EditModeManager` when leveling up with mouse-anchored tooltip addons.
+- **Elite, Group, Dungeon & Raid Quest Tags**: Updated `GetQuestTagDetails()` in `src/Utils.lua` to detect `tagInfo.isElite`, `tagID == 1` (Group/Elite as `+`), `tagID == 81` (Dungeon as `D`), and `tagID == 62/82/83` (Raid as `R`) with fallback tag names.
+- **Homologated Blizzard-Style Quest Titles**: Updated `src/QuestLog.lua` and `src/Tracker.lua` so both the Quest Log and Objective Tracker (native and overflow blocks) consistently display `[level+]` / `[levelD]` / `[levelR]` prefixes and `(Elite)` / `(Dungeon)` / `(Raid)` tags matching Blizzard's `_forever_` layout, and fixed the `0` truthiness bug in `Tracker.lua` level resolution.
+
+---
+
 ## [v1.0.9] - 2026-11-17
 
 ### Fixed

@@ -13,6 +13,7 @@ local IsQuestWatchedByID      = FQL.IsQuestWatchedByID
 local SetQuestWatchedByID     = FQL.SetQuestWatchedByID
 local IsQuestCompleteOrFailed = FQL.IsQuestCompleteOrFailed
 local GetDifficultyColor      = FQL.GetDifficultyColor
+local GetQuestTagDetails      = FQL.GetQuestTagDetails
 
 local MIN_SCALE               = FQL.MIN_SCALE or 0.6
 local MAX_SCALE               = FQL.MAX_SCALE or 1.6
@@ -92,14 +93,28 @@ function FQL:GetQuestZoneLookup()
                     seenZones[currentHeader] = orderCounter
                     zoneOrder[currentHeader] = orderCounter
                 end
+                local tagName, tagAbbr
+                if GetQuestTagDetails then
+                    tagName, tagAbbr = GetQuestTagDetails(info.questID, info)
+                end
+                local qLvl = SafeNum(info.level)
+                if not qLvl or qLvl <= 0 then
+                    qLvl = SafeNum(info.difficultyLevel) or 0
+                end
+                local dLvl = SafeNum(info.difficultyLevel)
+                if not dLvl or dLvl <= 0 then
+                    dLvl = qLvl
+                end
                 questToZone[info.questID] = {
                     zone = currentHeader,
                     logIndex = i,
                     questOrder = i,
                     completeState = IsQuestCompleteOrFailed(info.questID, info.isComplete),
                     title = info.title,
-                    level = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0,
-                    difficultyLevel = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0,
+                    level = qLvl,
+                    difficultyLevel = dLvl,
+                    tagName = tagName,
+                    tagAbbr = tagAbbr or "",
                 }
             end
         end
@@ -789,7 +804,12 @@ end
 
 local function ApplyBlockHeaderColor(block, qid, qMeta)
     if not block or not GetDifficultyColor then return end
-    local qLevel = (qMeta and (SafeNum(qMeta.difficultyLevel) or SafeNum(qMeta.level))) or 0
+    local qLevel = 0
+    if qMeta then
+        local d = SafeNum(qMeta.difficultyLevel)
+        local l = SafeNum(qMeta.level)
+        qLevel = (d and d > 0) and d or ((l and l > 0) and l or 0)
+    end
     if qLevel <= 0 and qid and qid > 0 then
         if C_QuestLog and C_QuestLog.GetQuestDifficultyLevel then
             local ok, dLvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
@@ -802,7 +822,9 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
             if ok and SafeNum(idx) and idx > 0 then
                 local ok2, info = pcall(C_QuestLog.GetInfo, idx)
                 if ok2 and type(info) == "table" then
-                    qLevel = SafeNum(info.difficultyLevel) or SafeNum(info.level) or 0
+                    local d = SafeNum(info.difficultyLevel)
+                    local l = SafeNum(info.level)
+                    qLevel = (d and d > 0) and d or ((l and l > 0) and l or 0)
                 end
             end
         end
@@ -810,6 +832,15 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
 
     local r, g, b = GetDifficultyColor(qLevel, qid)
     local hex = string.format("%02x%02x%02x", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+    local tagName = qMeta and SafeStr(qMeta.tagName) or nil
+    local tagAbbr = qMeta and SafeStr(qMeta.tagAbbr) or nil
+    if (not tagAbbr or tagAbbr == "" or not tagName or tagName == "") and GetQuestTagDetails and qid and qid > 0 then
+        local tName, tAbbr = GetQuestTagDetails(qid, nil)
+        if not tagName or tagName == "" then tagName = SafeStr(tName) end
+        if not tagAbbr or tagAbbr == "" then tagAbbr = SafeStr(tAbbr) end
+    end
+    local displayTag = (tagAbbr == "+") and (_G.ELITE or "Elite") or tagName
+    local tagSuffix = (displayTag and displayTag ~= "") and (" (" .. displayTag .. ")") or nil
 
     local function ColorizeFontString(fs)
         if not fs or type(fs.GetText) ~= "function" then return end
@@ -817,6 +848,22 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
         if not ok or not txt or txt == "" then return end
 
         local clean = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        if tagAbbr and tagAbbr ~= "" then
+            local lvlPrefix, rest = clean:match("^%[(%d+)%]%s*(.*)$")
+            if lvlPrefix then
+                clean = "[" .. lvlPrefix .. tagAbbr .. "] " .. rest
+            elseif qLevel and qLevel > 0 and not clean:match("^%[") then
+                clean = "[" .. tostring(qLevel) .. tagAbbr .. "] " .. clean
+            end
+        elseif qLevel and qLevel > 0 and not clean:match("^%[") then
+            clean = "[" .. tostring(qLevel) .. "] " .. clean
+        end
+        if tagSuffix then
+            local suffixLen = #tagSuffix
+            if #clean < suffixLen or clean:sub(-suffixLen) ~= tagSuffix then
+                clean = clean .. tagSuffix
+            end
+        end
         pcall(fs.SetText, fs, "|cff" .. hex .. clean .. "|r")
         if fs.SetTextColor then
             pcall(fs.SetTextColor, fs, r, g, b)
@@ -1116,8 +1163,17 @@ local function AcquireOverflowQuestBlock(tracker, contents, index, qid, qMeta, w
     local rawTitle = (qMeta and SafeStr(qMeta.title)) or ("Quest " .. tostring(qid))
     block.questTitle = rawTitle
     local title = rawTitle
-    if nativeSample and nativeSample.hasLevelPrefix and qMeta and SafeNum(qMeta.level) and qMeta.level > 0 then
-        title = "[" .. tostring(qMeta.level) .. "] " .. rawTitle
+    local qTagName = qMeta and SafeStr(qMeta.tagName) or nil
+    local qTagAbbr = (qMeta and SafeStr(qMeta.tagAbbr)) or ""
+    if qMeta and SafeNum(qMeta.level) and qMeta.level > 0 then
+        title = "[" .. tostring(qMeta.level) .. qTagAbbr .. "] " .. rawTitle
+    end
+    local displayTag = (qTagAbbr == "+") and (_G.ELITE or "Elite") or qTagName
+    if displayTag and displayTag ~= "" then
+        local tagSuffix = " (" .. displayTag .. ")"
+        if #title < #tagSuffix or title:sub(-#tagSuffix) ~= tagSuffix then
+            title = title .. tagSuffix
+        end
     end
     block.HeaderText:SetText(title)
     local headerHeight = math.max(14, SafeNum(block.HeaderText:GetStringHeight()) or 14)
@@ -2304,26 +2360,6 @@ local function HandleTrackerQuestClick(block, mouseButton)
     end
 end
 
-local function ForceUnlimitedTrackerHeight(self)
-    if not self then return end
-    local cur = SafeNum(self.availableHeight)
-    if cur and cur > 40 and cur < 50000 then
-        TS(self).nativeAvailableHeight = cur
-    end
-    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.trackerByZone ~= false then
-        self.availableHeight = 100000
-    end
-end
-
-local function NeedsFullHeightRetry(tracker)
-    if not tracker then return false end
-    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then return false end
-    if tracker.hasSkippedBlocks then return true end
-    local avail = SafeNum(tracker.availableHeight)
-    if avail and avail < 50000 then return true end
-    return false
-end
-
 local function HookSingleTrackerModule(tracker)
     if not tracker then return end
     local ts = TS(tracker)
@@ -2332,7 +2368,6 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.BeginLayout then
         hooksecurefunc(tracker, "BeginLayout", function(self)
-            ForceUnlimitedTrackerHeight(self)
             local cFrame = self.ContentsFrame or self
             if cFrame and cFrame.GetChildren then
                 for _, child in ipairs({ cFrame:GetChildren() }) do
@@ -2344,39 +2379,8 @@ local function HookSingleTrackerModule(tracker)
         end)
     end
 
-    local preFitMethods = {
-        "MarkBlocksUnused",
-        "AddAutoQuestObjectives",
-        "EnumQuestWatchData",
-        "ShouldDisplayQuest",
-        "UpdateSingle",
-        "GetBlock",
-        "SetBlockHeader",
-        "AddHeader",
-        "AnchorBlock",
-        "AddBlock",
-    }
-    for _, mName in ipairs(preFitMethods) do
-        if type(tracker[mName]) == "function" then
-            hooksecurefunc(tracker, mName, ForceUnlimitedTrackerHeight)
-        end
-    end
-
     if tracker.EndLayout then
         hooksecurefunc(tracker, "EndLayout", function(self)
-            local s = TS(self)
-            if NeedsFullHeightRetry(self) then
-                if not s.retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and self.Update then
-                    s.retryingFullHeight = true
-                    self.availableHeight = 100000
-                    if self.MarkDirty then
-                        pcall(self.MarkDirty, self)
-                    end
-                    pcall(self.Update, self, 100000, true)
-                    s.retryingFullHeight = false
-                    return
-                end
-            end
             FQL:ApplyTrackerZoneLayout(self)
         end)
     elseif tracker.LayoutContents then
@@ -2387,7 +2391,7 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.Update then
         hooksecurefunc(tracker, "Update", function(self, _, dirtyUpdate)
-            if dirtyUpdate and not TS(self).retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) then
+            if dirtyUpdate and not (InCombatLockdown and InCombatLockdown()) then
                 FQL:ApplyTrackerZoneLayout(self)
             end
         end)
@@ -2421,23 +2425,12 @@ local function SetupObjectiveTrackerHooks()
         containerHooked = true
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
-                local function UpdateOrApplyModule(mod)
-                    if not mod then return end
-                    local s = TS(mod)
-                    if NeedsFullHeightRetry(mod) and not s.retryingFullHeight and not (InCombatLockdown and InCombatLockdown()) and mod.Update then
-                        s.retryingFullHeight = true
-                        mod.availableHeight = 100000
-                        if mod.MarkDirty then
-                            pcall(mod.MarkDirty, mod)
-                        end
-                        pcall(mod.Update, mod, 100000, true)
-                        s.retryingFullHeight = false
-                    else
-                        FQL:ApplyTrackerZoneLayout(mod)
-                    end
+                if _G.QuestObjectiveTracker then
+                    FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
                 end
-                UpdateOrApplyModule(_G.QuestObjectiveTracker)
-                UpdateOrApplyModule(_G.CampaignQuestObjectiveTracker)
+                if _G.CampaignQuestObjectiveTracker then
+                    FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
+                end
             end)
         end
     end
@@ -2445,61 +2438,15 @@ end
 
 function FQL:RefreshObjectiveTracker()
     SetupObjectiveTrackerHooks()
-    local inCombat = (InCombatLockdown and InCombatLockdown())
-    if shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerByZone == false then
-        if _G.QuestObjectiveTracker then
-            self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
-            if not inCombat and _G.QuestObjectiveTracker.Update then
-                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 800, false)
-            end
-        end
-        if _G.CampaignQuestObjectiveTracker then
-            self:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
-            if not inCombat and _G.CampaignQuestObjectiveTracker.Update then
-                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 800, false)
-            end
-        end
-        if not inCombat and _G.ObjectiveTrackerFrame and _G.ObjectiveTrackerFrame.Update then
-            pcall(_G.ObjectiveTrackerFrame.Update, _G.ObjectiveTrackerFrame)
-        end
+    if InCombatLockdown and InCombatLockdown() then
+        self._needsTrackerCombatRefresh = true
         return
     end
-
-    if not inCombat then
-        if _G.QuestObjectiveTracker then
-            _G.QuestObjectiveTracker.availableHeight = 100000
-            if _G.QuestObjectiveTracker.MarkDirty then
-                pcall(_G.QuestObjectiveTracker.MarkDirty, _G.QuestObjectiveTracker)
-            end
-            if _G.QuestObjectiveTracker.Update then
-                pcall(_G.QuestObjectiveTracker.Update, _G.QuestObjectiveTracker, 100000, true)
-            end
-        end
-        if _G.CampaignQuestObjectiveTracker then
-            _G.CampaignQuestObjectiveTracker.availableHeight = 100000
-            if _G.CampaignQuestObjectiveTracker.MarkDirty then
-                pcall(_G.CampaignQuestObjectiveTracker.MarkDirty, _G.CampaignQuestObjectiveTracker)
-            end
-            if _G.CampaignQuestObjectiveTracker.Update then
-                pcall(_G.CampaignQuestObjectiveTracker.Update, _G.CampaignQuestObjectiveTracker, 100000, true)
-            end
-        end
-    else
-        self._needsTrackerCombatRefresh = true
-    end
-
     if _G.QuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
     end
     if _G.CampaignQuestObjectiveTracker then
         self:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
-    end
-    if not inCombat then
-        if _G.ObjectiveTrackerFrame and _G.ObjectiveTrackerFrame.UpdateHeight then
-            pcall(_G.ObjectiveTrackerFrame.UpdateHeight, _G.ObjectiveTrackerFrame)
-        end
-    else
-        self._needsTrackerCombatRefresh = true
     end
 end
 

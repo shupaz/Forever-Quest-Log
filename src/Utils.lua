@@ -685,36 +685,47 @@ end
 
 local function GetQuestTagDetails(questID, info)
     local tagName, tagAbbr = nil, ""
+    local isElite = false
+    local tagID = nil
+
     if C_QuestLog and C_QuestLog.GetQuestTagInfo and questID and questID > 0 then
         local ok, tagInfo = pcall(C_QuestLog.GetQuestTagInfo, questID)
         if ok and type(tagInfo) == "table" then
             tagName = SafeStr(tagInfo.tagName)
-            local tagID = SafeNum(tagInfo.tagID)
-            if tagID == 1 or (tagName and tagName:lower():find("group")) then
-                tagAbbr = "G"
-            elseif tagID == 81 or (tagName and tagName:lower():find("dungeon")) then
-                tagAbbr = "D"
-            elseif tagID == 62 or (tagName and tagName:lower():find("raid")) then
-                tagAbbr = "R"
-            elseif tagID == 41 or (tagName and tagName:lower():find("pvp")) then
-                tagAbbr = "P"
-            elseif tagID == 85 or (tagName and tagName:lower():find("heroic")) then
-                tagAbbr = "H"
-            elseif tagName and tagName:lower():find("elite") then
-                tagAbbr = "+"
-            end
+            tagID = SafeNum(tagInfo.tagID)
+            isElite = tagInfo.isElite == true
         end
     elseif GetQuestTagInfo and questID and questID > 0 then
-        local ok, _, name = pcall(GetQuestTagInfo, questID)
-        if ok and SafeStr(name) then
-            tagName = name
+        local ok, lTagID, lTagName, _, _, lIsElite = pcall(GetQuestTagInfo, questID)
+        if ok then
+            tagID = SafeNum(lTagID)
+            tagName = SafeStr(lTagName)
+            isElite = lIsElite == true
         end
     end
 
+    if tagID == 81 or (tagName and tagName:lower():find("dungeon")) then
+        tagAbbr = "D"
+        if not tagName then tagName = _G.LFG_TYPE_DUNGEON or "Dungeon" end
+    elseif tagID == 62 or tagID == 82 or tagID == 83 or (tagName and tagName:lower():find("raid")) then
+        tagAbbr = "R"
+        if not tagName then tagName = _G.RAID or "Raid" end
+    elseif tagID == 41 or (tagName and tagName:lower():find("pvp")) then
+        tagAbbr = "P"
+        if not tagName then tagName = _G.PVP or "PvP" end
+    elseif tagID == 85 or (tagName and tagName:lower():find("heroic")) then
+        tagAbbr = "H"
+        if not tagName then tagName = _G.PLAYER_DIFFICULTY2 or "Heroic" end
+    elseif isElite or tagID == 1 or (tagName and (tagName:lower():find("elite") or tagName:lower():find("group"))) then
+        tagAbbr = "+"
+    end
+
     if info and info.suggestedGroup and info.suggestedGroup > 0 and tagAbbr == "" then
-        tagAbbr = "G" .. tostring(info.suggestedGroup)
-    elseif info and info.suggestedGroup and info.suggestedGroup > 0 and tagAbbr == "G" then
-        tagAbbr = "G" .. tostring(info.suggestedGroup)
+        tagAbbr = "+"
+    end
+
+    if isElite and not tagName then
+        tagName = ELITE or "Elite"
     end
 
     if info and info.frequency then

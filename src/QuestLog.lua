@@ -2002,17 +2002,22 @@ function FQL:RefreshQuestList()
                     end
 
                     ApplyScaledFont(qRow.statusText)
+                    local showLevels = not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showQuestLevels ~= false
                     if q.completeState == 1 then
                         qRow.statusText:SetText("|cff40ff40(" .. (COMPLETE or "Complete") .. ")|r")
                     elseif q.completeState == -1 then
                         qRow.statusText:SetText("|cffff4040(" .. (FAILED or "Failed") .. ")|r")
+                    elseif q.tagName and q.tagName ~= "" then
+                        local displayTag = (q.tagAbbr == "+") and (_G.ELITE or "Elite") or q.tagName
+                        local hexTag = string.format("%02x%02x%02x", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+                        qRow.statusText:SetText("|cff" .. hexTag .. "(" .. displayTag .. ")|r")
                     else
                         qRow.statusText:SetText("")
                     end
 
                     local partyCount = GetQuestPartyCount(q.questID, q.logIndex)
                     local prefix = (partyCount > 0) and ("|cff66ccff(" .. partyCount .. ")|r ") or ""
-                    if not shupazForeverQuestLogDB or shupazForeverQuestLogDB.showQuestLevels ~= false then
+                    if showLevels then
                         local lvlStr = (q.level and q.level > 0) and tostring(q.level) or "?"
                         prefix = prefix .. "[" .. lvlStr .. (q.tagAbbr or "") .. "] "
                     end
