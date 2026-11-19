@@ -96,7 +96,10 @@ local function FormatFontLabelFromPath(path)
     return stem
 end
 
-function FQL:GetTrackerFonts()
+function FQL:GetTrackerFonts(forceRefresh)
+    if not forceRefresh and self._cachedTrackerFonts then
+        return self._cachedTrackerFonts
+    end
     local list = {}
     local seenPaths = {}
     local seenLabels = {}
@@ -189,6 +192,7 @@ function FQL:GetTrackerFonts()
         list[#list + 1] = entry
     end
 
+    self._cachedTrackerFonts = list
     return list
 end
 
@@ -210,7 +214,11 @@ function FQL:GetTrackerFontEntry(fontID)
 end
 
 function FQL:GetTrackerFontPath()
-    local entry = self:GetTrackerFontEntry()
+    local fontID = (shupazForeverQuestLogDB and shupazForeverQuestLogDB.trackerFont) or "DEFAULT"
+    if fontID == "DEFAULT" then
+        return nil
+    end
+    local entry = self:GetTrackerFontEntry(fontID)
     if not entry or entry.id == "DEFAULT" then
         return nil
     end

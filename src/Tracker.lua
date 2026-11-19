@@ -68,7 +68,15 @@ local TRACKER_ZONE_HEADER_GAP_TOP = 12
 local TRACKER_ZONE_HEADER_GAP_BOTTOM = 12
 local TRACKER_BLOCK_GAP = 8
 
+local cachedZoneLookupTime
+local cachedQuestToZone
+local cachedZoneOrder
+
 function FQL:GetQuestZoneLookup()
+    local now = GetTime and GetTime() or nil
+    if now and cachedZoneLookupTime == now and cachedQuestToZone then
+        return cachedQuestToZone, cachedZoneOrder
+    end
     ExpandAllNativeHeaders()
     local numShown = GetNumLogEntries()
     local questToZone = {}
@@ -120,6 +128,9 @@ function FQL:GetQuestZoneLookup()
         end
     end
 
+    cachedZoneLookupTime = now
+    cachedQuestToZone = questToZone
+    cachedZoneOrder = zoneOrder
     return questToZone, zoneOrder
 end
 
@@ -749,7 +760,8 @@ local function ApplyFontToFontString(fs, fontPath)
     if baseSize <= 0 then baseSize = 12 end
     local targetSize = math.max(8, math.floor(baseSize * fontScale + 0.5))
     local flags = SafeStr(curFlags) or fst.origFlags or ""
-    if curFont ~= targetFont or curSize ~= targetSize then
+    local curNumSize = SafeNum(curSize)
+    if curFont ~= targetFont or not curNumSize or math.abs(curNumSize - targetSize) > 0.25 then
         pcall(fs.SetFont, fs, targetFont, targetSize, flags)
     end
 end
@@ -1274,6 +1286,7 @@ function FQL:ApplyTrackerStyle(tracker)
     local tScale = (shupazForeverQuestLogDB and tonumber(shupazForeverQuestLogDB.trackerScale)) or 1.0
     if tScale < MIN_SCALE then tScale = MIN_SCALE end
     if tScale > MAX_SCALE then tScale = MAX_SCALE end
+    local fontPath = self:GetTrackerFontPath()
 
     if _G.ObjectiveTrackerFrame then
         if CanChangeFrame(_G.ObjectiveTrackerFrame) then
@@ -1285,7 +1298,7 @@ function FQL:ApplyTrackerStyle(tracker)
             self._needsTrackerCombatRefresh = true
         end
         if _G.ObjectiveTrackerFrame.Header and _G.ObjectiveTrackerFrame.Header.Text then
-            ApplyFontToFontString(_G.ObjectiveTrackerFrame.Header.Text, self:GetTrackerFontPath())
+            ApplyFontToFontString(_G.ObjectiveTrackerFrame.Header.Text, fontPath)
         end
     elseif tracker and CanChangeFrame(tracker) then
         local curScale = SafeNum(tracker:GetScale())
@@ -1295,7 +1308,6 @@ function FQL:ApplyTrackerStyle(tracker)
     end
 
     if not tracker then return end
-    local fontPath = self:GetTrackerFontPath()
     local ts = TS(tracker)
 
     if tracker.Header and tracker.Header.Text then
@@ -1737,7 +1749,6 @@ function FQL:ApplyTrackerZoneLayout(tracker)
     if not contents then return end
     local ts = TS(tracker)
 
-    self:ApplyTrackerStyle(tracker)
     AttachTrackerMouseWheel(contents, tracker)
 
     local function HideTrackerQuestEntry(entry)
@@ -1785,6 +1796,7 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         for _, entry in ipairs(questBlocks) do
             ApplyBlockHeaderColor(entry.block, entry.questID, questToZone[entry.questID])
         end
+        self:ApplyTrackerStyle(tracker)
         return
     end
 
@@ -2330,11 +2342,18 @@ function FQL:ApplyTrackerZoneLayout(tracker)
         if contents.SetClipsChildren then
             pcall(contents.SetClipsChildren, contents, false)
         end
-        contents:SetHeight(finalHeight)
+        local curH = SafeNum(contents:GetHeight())
+        if not curH or math.abs(curH - finalHeight) > 0.5 then
+            contents:SetHeight(finalHeight)
+        end
     end
     if tracker ~= contents and CanChangeFrame(tracker) then
         local hdrH = (tracker.Header and SafeNum(tracker.Header:GetHeight())) or 26
-        tracker:SetHeight(hdrH + finalHeight + 6)
+        local targetTrackerH = hdrH + finalHeight + 6
+        local curTH = SafeNum(tracker:GetHeight())
+        if not curTH or math.abs(curTH - targetTrackerH) > 0.5 then
+            tracker:SetHeight(targetTrackerH)
+        end
     end
 
     local sbTargetHeight = (maxScrollIndex > 1) and math.max(finalHeight, maxContentsHeight - 16) or finalHeight
@@ -2381,10 +2400,12 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.EndLayout then
         hooksecurefunc(tracker, "EndLayout", function(self)
+            TS(self)._lastHookTime = GetTime and GetTime() or nil
             FQL:ApplyTrackerZoneLayout(self)
         end)
     elseif tracker.LayoutContents then
         hooksecurefunc(tracker, "LayoutContents", function(self)
+            TS(self)._lastHookTime = GetTime and GetTime() or nil
             FQL:ApplyTrackerZoneLayout(self)
         end)
     end
@@ -2392,7 +2413,12 @@ local function HookSingleTrackerModule(tracker)
     if tracker.Update then
         hooksecurefunc(tracker, "Update", function(self, _, dirtyUpdate)
             if dirtyUpdate and not (InCombatLockdown and InCombatLockdown()) then
-                FQL:ApplyTrackerZoneLayout(self)
+                local now = GetTime and GetTime() or nil
+                local tState = TS(self)
+                if not now or tState._lastHookTime ~= now then
+                    tState._lastHookTime = now
+                    FQL:ApplyTrackerZoneLayout(self)
+                end
             end
         end)
     end
@@ -2425,11 +2451,22 @@ local function SetupObjectiveTrackerHooks()
         containerHooked = true
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
-                if _G.QuestObjectiveTracker then
-                    FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
+                local now = GetTime and GetTime() or nil
+                local qTracker = _G.QuestObjectiveTracker
+                if qTracker then
+                    local tState = TS(qTracker)
+                    if not now or tState._lastHookTime ~= now then
+                        tState._lastHookTime = now
+                        FQL:ApplyTrackerZoneLayout(qTracker)
+                    end
                 end
-                if _G.CampaignQuestObjectiveTracker then
-                    FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
+                local cTracker = _G.CampaignQuestObjectiveTracker
+                if cTracker then
+                    local tState = TS(cTracker)
+                    if not now or tState._lastHookTime ~= now then
+                        tState._lastHookTime = now
+                        FQL:ApplyTrackerZoneLayout(cTracker)
+                    end
                 end
             end)
         end

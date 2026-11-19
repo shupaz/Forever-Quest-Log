@@ -4,6 +4,16 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.11] - 2026-11-18
+
+### Fixed
+- **Objective Tracker & Equipment-Swap / Quest Turn-In Stutter**:
+  - **Cached Font Enumeration (`GetTrackerFonts`)**: Cached `GetTrackerFonts()` in `src/Utils.lua` (`self._cachedTrackerFonts`) and added a `"DEFAULT"` fast-path in `GetTrackerFontPath()`, eliminating repeated `LibSharedMedia-3.0`, `_G.GetFonts()`, and `fontProbeFS:SetFont(...)` scans on every tracker layout.
+  - **Item Info & Event Filtering**: Handled `GET_ITEM_INFO_RECEIVED` and `GROUP_ROSTER_UPDATE` in `src/Init.lua` to only refresh the Quest Log window when open (instead of rebuilding the Objective Tracker on gear swaps or roster changes), removed redundant `ZONE_CHANGED` subzone tracker refreshes, and split `PLAYER_REGEN_ENABLED` from `PLAYER_ENTERING_WORLD` so combat exit only refreshes deferred combat updates.
+  - **Tracker Layout Deduplication**: Added per-frame (`GetTime()`) deduplication across `EndLayout`, `LayoutContents`, `Update`, and `ObjectiveTrackerFrame.Update` hooks in `src/Tracker.lua`, cached `GetQuestZoneLookup()` per frame, removed duplicate `ApplyTrackerStyle()` calls, added a `0.25` float tolerance to `ApplyFontToFontString()`, and guarded `SetHeight()` calls to avoid unnecessary layout re-dirtying.
+
+---
+
 ## [v1.0.10] - 2026-11-18
 
 ### Fixed

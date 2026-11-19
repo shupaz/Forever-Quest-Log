@@ -183,7 +183,6 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
-eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("QUEST_WATCH_UPDATE")
 eventFrame:RegisterEvent("QUEST_LOG_CRITERIA_UPDATE")
@@ -214,20 +213,26 @@ local function ScheduleTrackerRefresh(forceRebuild)
     end
 end
 
-local function ScheduleRefresh(forceTrackerRebuild)
-    ScheduleTrackerRefresh(forceTrackerRebuild)
+local function ScheduleQuestLogRefresh()
     if refreshQueued then return end
     if not FQL.frame or not FQL.frame:IsShown() then return end
     refreshQueued = true
     if C_Timer and C_Timer.After then
         C_Timer.After(0.05, function()
             refreshQueued = false
-            FQL:Refresh()
+            if FQL.frame and FQL.frame:IsShown() then
+                FQL:Refresh()
+            end
         end)
     else
         refreshQueued = false
         FQL:Refresh()
     end
+end
+
+local function ScheduleRefresh(forceTrackerRebuild)
+    ScheduleTrackerRefresh(forceTrackerRebuild)
+    ScheduleQuestLogRefresh()
 end
 
 FQL.ScheduleTrackerRefresh = ScheduleTrackerRefresh
@@ -339,13 +344,19 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         return
     end
 
-    if event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
+    if event == "GET_ITEM_INFO_RECEIVED" then
+        -- Item info arrives frequently during gear swaps / bag updates; only refresh the
+        -- Quest Log UI if it is open, never rebuild the Objective Tracker.
+        ScheduleQuestLogRefresh()
+        return
+    end
+
+    if event == "PLAYER_ENTERING_WORLD" then
         if FQL._needsBindingUpdate then
             UpdateKeybindOverrides()
         end
         if FQL._needsTrackerCombatRefresh then
             FQL._needsTrackerCombatRefresh = false
-            FQL:RefreshObjectiveTracker()
         end
         SuppressMapQuestLog()
         SetupObjectiveTrackerHooks()
@@ -353,7 +364,23 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         return
     end
 
-    if event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
+    if event == "PLAYER_REGEN_ENABLED" then
+        if FQL._needsBindingUpdate then
+            UpdateKeybindOverrides()
+        end
+        if FQL._needsTrackerCombatRefresh then
+            FQL._needsTrackerCombatRefresh = false
+            ScheduleTrackerRefresh()
+        end
+        return
+    end
+
+    if event == "GROUP_ROSTER_UPDATE" then
+        ScheduleQuestLogRefresh()
+        return
+    end
+
+    if event == "ZONE_CHANGED_NEW_AREA" then
         ScheduleTrackerRefresh()
         return
     end
