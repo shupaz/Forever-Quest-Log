@@ -4,6 +4,14 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.12] - 2026-11-19
+
+### Fixed
+- **Objective Tracker Updates**: Reverted the per-frame `_lastHookTime` and `GetQuestZoneLookup()` caches in `src/Tracker.lua` so `ObjectiveTrackerFrame.Update` and `Update` hooks always run after `EndLayout` and quest-log lookups stay fresh mid-frame.
+- **Completed Quest Display in Tracker**: Updated `ApplyBlockHeaderColor()` and `GetOverflowQuestObjectives()` in `src/Tracker.lua` so completed quests display `(Complete)` in green (and `(Failed)` in red for failed quests) on the tracker header, hide all objective steps (including `"Ready for turn-in"`), and compact the block height to just the title.
+
+---
+
 ## [v1.0.11] - 2026-11-18
 
 ### Fixed

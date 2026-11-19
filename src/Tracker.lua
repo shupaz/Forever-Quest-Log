@@ -68,15 +68,7 @@ local TRACKER_ZONE_HEADER_GAP_TOP = 12
 local TRACKER_ZONE_HEADER_GAP_BOTTOM = 12
 local TRACKER_BLOCK_GAP = 8
 
-local cachedZoneLookupTime
-local cachedQuestToZone
-local cachedZoneOrder
-
 function FQL:GetQuestZoneLookup()
-    local now = GetTime and GetTime() or nil
-    if now and cachedZoneLookupTime == now and cachedQuestToZone then
-        return cachedQuestToZone, cachedZoneOrder
-    end
     ExpandAllNativeHeaders()
     local numShown = GetNumLogEntries()
     local questToZone = {}
@@ -128,9 +120,6 @@ function FQL:GetQuestZoneLookup()
         end
     end
 
-    cachedZoneLookupTime = now
-    cachedQuestToZone = questToZone
-    cachedZoneOrder = zoneOrder
     return questToZone, zoneOrder
 end
 
@@ -870,13 +859,30 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
         elseif qLevel and qLevel > 0 and not clean:match("^%[") then
             clean = "[" .. tostring(qLevel) .. "] " .. clean
         end
+        local completeLabel = _G.COMPLETE or "Complete"
+        local failedLabel = _G.FAILED or "Failed"
+        local completePlain = " (" .. completeLabel .. ")"
+        local failedPlain = " (" .. failedLabel .. ")"
+        if #clean >= #completePlain and clean:sub(-#completePlain) == completePlain then
+            clean = clean:sub(1, -#completePlain - 1)
+        elseif #clean >= #failedPlain and clean:sub(-#failedPlain) == failedPlain then
+            clean = clean:sub(1, -#failedPlain - 1)
+        end
+
         if tagSuffix then
             local suffixLen = #tagSuffix
             if #clean < suffixLen or clean:sub(-suffixLen) ~= tagSuffix then
                 clean = clean .. tagSuffix
             end
         end
-        pcall(fs.SetText, fs, "|cff" .. hex .. clean .. "|r")
+
+        local statusText = ""
+        if qMeta and qMeta.completeState == 1 then
+            statusText = " |cff40ff40(" .. completeLabel .. ")|r"
+        elseif qMeta and qMeta.completeState == -1 then
+            statusText = " |cffff4040(" .. failedLabel .. ")|r"
+        end
+        pcall(fs.SetText, fs, "|cff" .. hex .. clean .. "|r" .. statusText)
         if fs.SetTextColor then
             pcall(fs.SetTextColor, fs, r, g, b)
         end
@@ -887,6 +893,25 @@ local function ApplyBlockHeaderColor(block, qid, qMeta)
     end
     if block.HeaderButton and block.HeaderButton.GetFontString then
         ColorizeFontString(block.HeaderButton:GetFontString())
+    end
+
+    if qMeta and qMeta.completeState == 1 and not CustomOverflowBlocks[block] and type(block.usedLines) == "table" then
+        local hidAny = false
+        for _, line in pairs(block.usedLines) do
+            if type(line) == "table" and line.Hide then
+                pcall(line.Hide, line)
+                hidAny = true
+            end
+        end
+        if hidAny and block.HeaderText and block.HeaderText.GetStringHeight then
+            local hdrH = SafeNum(block.HeaderText:GetStringHeight()) or 14
+            local compactH = math.max(16, hdrH + 4)
+            block.height = compactH
+            BS(block).height = compactH
+            if CanChangeFrame(block) and block.SetHeight then
+                pcall(block.SetHeight, block, compactH)
+            end
+        end
     end
 end
 
@@ -899,6 +924,9 @@ local function HideAllOverflowQuestBlocks(tracker)
 end
 
 local function GetOverflowQuestObjectives(questID, logIndex, completeState)
+    if completeState == 1 then
+        return {}
+    end
     local objectives = {}
     if C_QuestLog and C_QuestLog.GetQuestObjectives and questID and questID > 0 then
         local ok, list = pcall(C_QuestLog.GetQuestObjectives, questID)
@@ -2400,12 +2428,10 @@ local function HookSingleTrackerModule(tracker)
 
     if tracker.EndLayout then
         hooksecurefunc(tracker, "EndLayout", function(self)
-            TS(self)._lastHookTime = GetTime and GetTime() or nil
             FQL:ApplyTrackerZoneLayout(self)
         end)
     elseif tracker.LayoutContents then
         hooksecurefunc(tracker, "LayoutContents", function(self)
-            TS(self)._lastHookTime = GetTime and GetTime() or nil
             FQL:ApplyTrackerZoneLayout(self)
         end)
     end
@@ -2413,12 +2439,7 @@ local function HookSingleTrackerModule(tracker)
     if tracker.Update then
         hooksecurefunc(tracker, "Update", function(self, _, dirtyUpdate)
             if dirtyUpdate and not (InCombatLockdown and InCombatLockdown()) then
-                local now = GetTime and GetTime() or nil
-                local tState = TS(self)
-                if not now or tState._lastHookTime ~= now then
-                    tState._lastHookTime = now
-                    FQL:ApplyTrackerZoneLayout(self)
-                end
+                FQL:ApplyTrackerZoneLayout(self)
             end
         end)
     end
@@ -2451,22 +2472,11 @@ local function SetupObjectiveTrackerHooks()
         containerHooked = true
         if _G.ObjectiveTrackerFrame.Update then
             hooksecurefunc(_G.ObjectiveTrackerFrame, "Update", function()
-                local now = GetTime and GetTime() or nil
-                local qTracker = _G.QuestObjectiveTracker
-                if qTracker then
-                    local tState = TS(qTracker)
-                    if not now or tState._lastHookTime ~= now then
-                        tState._lastHookTime = now
-                        FQL:ApplyTrackerZoneLayout(qTracker)
-                    end
+                if _G.QuestObjectiveTracker then
+                    FQL:ApplyTrackerZoneLayout(_G.QuestObjectiveTracker)
                 end
-                local cTracker = _G.CampaignQuestObjectiveTracker
-                if cTracker then
-                    local tState = TS(cTracker)
-                    if not now or tState._lastHookTime ~= now then
-                        tState._lastHookTime = now
-                        FQL:ApplyTrackerZoneLayout(cTracker)
-                    end
+                if _G.CampaignQuestObjectiveTracker then
+                    FQL:ApplyTrackerZoneLayout(_G.CampaignQuestObjectiveTracker)
                 end
             end)
         end
