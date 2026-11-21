@@ -4,6 +4,13 @@ All notable changes to **shupaz ForeverQuestLog** are documented in this file.
 
 ---
 
+## [v1.0.13] - 2026-11-21
+
+### Fixed
+- **Quest Log Gold & Money Rewards**: Added `FormatCoinString()` in `src/Utils.lua` using `C_CurrencyInfo.GetCoinTextureString` (with fallback to `GetCoinTextureString` and native coin icon formatting) and a `C_QuestLog` money reward fallback in `GetQuestRewardsData()`, and updated `src/QuestLog.lua` so money rewards and required money render properly in the quest detail pane on `_forever_` (11.x+ engine).
+
+---
+
 ## [v1.0.12] - 2026-11-19
 
 ### Fixed

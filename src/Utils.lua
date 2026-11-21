@@ -319,6 +319,35 @@ local function FormatNumber(n)
     return formatted
 end
 
+local function FormatCoinString(copper)
+    copper = SafeNum(copper)
+    if not copper or copper <= 0 then return "" end
+    copper = math.floor(copper)
+
+    local coinFn = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    if coinFn then
+        local ok, str = pcall(coinFn, copper)
+        if ok and SafeStr(str) then
+            return str
+        end
+    end
+
+    local gold = math.floor(copper / 10000)
+    local silver = math.floor((copper % 10000) / 100)
+    local bronze = copper % 100
+    local parts = {}
+    if gold > 0 then
+        parts[#parts + 1] = FormatNumber(gold) .. "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t"
+    end
+    if silver > 0 then
+        parts[#parts + 1] = tostring(silver) .. "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t"
+    end
+    if bronze > 0 or (gold == 0 and silver == 0) then
+        parts[#parts + 1] = tostring(bronze) .. "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
+    end
+    return table.concat(parts, " ")
+end
+
 -- ============================================================
 -- Quest API Wrappers (Compatible with WoW: Forever 16001)
 -- ============================================================
@@ -993,6 +1022,15 @@ local function GetQuestRewardsData(questID, logIndex)
             data.money = money
         end
     end
+    if data.money == 0 and C_QuestLog then
+        local fn = C_QuestLog.GetQuestRewardMoney or C_QuestLog.GetQuestLogRewardMoney
+        if fn then
+            local ok, money = pcall(fn, questID)
+            if ok and SafeNum(money) and money > 0 then
+                data.money = money
+            end
+        end
+    end
 
     if GetQuestLogRequiredMoney then
         local ok, reqMoney = pcall(GetQuestLogRequiredMoney, questID)
@@ -1272,6 +1310,7 @@ FQL.PlayClickSound            = PlayClickSound
 FQL.SetBackdrop               = SetBackdrop
 FQL.AddClassicParchment        = AddClassicParchment
 FQL.FormatNumber              = FormatNumber
+FQL.FormatCoinString          = FormatCoinString
 
 FQL.GetMaxQuests              = GetMaxQuests
 FQL.ExpandAllNativeHeaders    = ExpandAllNativeHeaders

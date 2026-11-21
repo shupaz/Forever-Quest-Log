@@ -7,6 +7,7 @@ local CanChangeFrame            = FQL.CanChangeFrame
 local SetBackdrop               = FQL.SetBackdrop
 local AddClassicParchment        = FQL.AddClassicParchment
 local FormatNumber              = FQL.FormatNumber
+local FormatCoinString          = FQL.FormatCoinString
 local PlayOpenSound             = FQL.PlayOpenSound
 local PlayCloseSound            = FQL.PlayCloseSound
 local PlayClickSound            = FQL.PlayClickSound
@@ -2271,9 +2272,9 @@ function FQL:RefreshQuestDetail()
             objTextLines[#objTextLines + 1] = "• " .. o.text
         end
     end
-    if rewards.requiredMoney and rewards.requiredMoney > 0 and GetCoinTextureString then
-        local coinStr = GetCoinTextureString(rewards.requiredMoney)
-        objTextLines[#objTextLines + 1] = (REQUIRED_MONEY or "Required Money:") .. " " .. (coinStr or tostring(rewards.requiredMoney))
+    if rewards.requiredMoney and rewards.requiredMoney > 0 then
+        local coinStr = FormatCoinString(rewards.requiredMoney)
+        objTextLines[#objTextLines + 1] = (REQUIRED_MONEY or "Required Money:") .. " " .. (coinStr ~= "" and coinStr or tostring(rewards.requiredMoney))
     end
     if rewards.timeLeft and rewards.timeLeft > 0 and SecondsToTime then
         objTextLines[#objTextLines + 1] = (TIME_REMAINING or "Time Remaining:") .. " " .. SecondsToTime(rewards.timeLeft)
@@ -2402,10 +2403,12 @@ function FQL:RefreshQuestDetail()
             frame.detailXPLine:Hide()
         end
 
-        if rewards.money and rewards.money > 0 and GetCoinTextureString then
+        if rewards.money and rewards.money > 0 then
+            local coinStr = FormatCoinString(rewards.money)
             frame.detailMoneyLine:ClearAllPoints()
             frame.detailMoneyLine:SetPoint("TOPLEFT", frame.detailContent, "TOPLEFT", 0, -y)
-            frame.detailMoneyLine:SetText((MONEY_COLON or "Money:") .. "  " .. GetCoinTextureString(rewards.money))
+            frame.detailMoneyLine:SetWidth(contentWidth)
+            frame.detailMoneyLine:SetText((MONEY_COLON or "Money:") .. "  " .. coinStr)
             frame.detailMoneyLine:Show()
             y = y + (frame.detailMoneyLine:GetStringHeight() or 16) + 6
         else
